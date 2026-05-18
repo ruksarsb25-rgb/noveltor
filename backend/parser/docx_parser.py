@@ -228,22 +228,31 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             # Look back: preceding non-empty paragraph was a skip label
             is_skip = bool(_SKIP_FIG_RE.match(last_nonempty_text)) if last_nonempty_text else False
 
-            # Look ahead for a caption or skip label (skip up to 2 blanks)
-            lookahead = 0
-            for _la in range(3):
-                if idx + lookahead < body_len and body_children[idx + lookahead].tag == _W_P:
-                    next_text = _para_el_text(body_children[idx + lookahead])
-                    if next_text:
-                        if _SKIP_FIG_RE.match(next_text):
-                            is_skip = True
-                            idx_delta = lookahead + 1
-                            para_delta = lookahead + 1
-                        elif _FIG_CAPTION_RE.match(next_text):
-                            caption = next_text
-                            idx_delta = lookahead + 1
-                            para_delta = lookahead + 1
-                        break
-                    lookahead += 1
+            # Check if the image paragraph itself carries caption/skip text
+            # (Word sometimes places the caption in the same <w:p> as the image)
+            if text:
+                if _SKIP_FIG_RE.match(text):
+                    is_skip = True
+                elif _FIG_CAPTION_RE.match(text):
+                    caption = text
+
+            if not caption and not is_skip:
+                # Look ahead for a caption or skip label (skip up to 2 blanks)
+                lookahead = 0
+                for _la in range(3):
+                    if idx + lookahead < body_len and body_children[idx + lookahead].tag == _W_P:
+                        next_text = _para_el_text(body_children[idx + lookahead])
+                        if next_text:
+                            if _SKIP_FIG_RE.match(next_text):
+                                is_skip = True
+                                idx_delta = lookahead + 1
+                                para_delta = lookahead + 1
+                            elif _FIG_CAPTION_RE.match(next_text):
+                                caption = next_text
+                                idx_delta = lookahead + 1
+                                para_delta = lookahead + 1
+                            break
+                        lookahead += 1
 
             idx      += idx_delta
             para_idx += para_delta
