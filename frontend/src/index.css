@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+  text-align: left;
+}
+
+/* Syntax highlight for XML viewer */
+.xml-viewer {
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.xml-tag { color: #0ea5e9; }
+.xml-attr { color: #f59e0b; }
+.xml-value { color: #22c55e; }
+.xml-text { color: #e2e8f0; }
+
+/* Article HTML preview styling */
+.article-preview {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.8;
+  color: #1e293b;
+}
+.article-preview h1 { font-size: 18pt; font-weight: bold; margin-bottom: 12px; }
+.article-preview h2 { font-size: 14pt; font-weight: bold; margin-top: 20px; margin-bottom: 8px; }
+.article-preview h3 { font-size: 12pt; font-weight: bold; margin-top: 16px; margin-bottom: 6px; }
+.article-preview p { margin-bottom: 10px; text-align: justify; }
+.article-preview .authors { font-size: 11pt; margin-bottom: 8px; }
+.article-preview .abstract { border-left: 3px solid #0F3557; padding-left: 16px; margin: 16px 0; }
+.article-preview .abstract-title { font-weight: bold; margin-bottom: 6px; }
+.article-preview .keywords { font-style: italic; font-size: 10pt; margin-top: 8px; }
+.article-preview .ref-list { font-size: 10pt; }
+.article-preview .ref-list p { margin-bottom: 4px; }
+
+/* DnD drag handle cursor */
+.drag-handle { cursor: grab; }
+.drag-handle:active { cursor: grabbing; }
+
+/* Toast override */
+.toast-success { background: #dcfce7 !important; color: #166534 !important; }
+.toast-error { background: #fee2e2 !important; color: #991b1b !important; }
