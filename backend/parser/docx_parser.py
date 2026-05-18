@@ -10,10 +10,10 @@ from docx.oxml.ns import qn as _qn
 _SUP_TO_NUM = str.maketrans('¹²³⁴⁵⁶⁷⁸⁹⁰', '1234567890')
 
 _EMAIL_RE = re.compile(r'[\w.+-]+@[\w.-]+\.\w+')
-_CORRESP_LINE_RE = re.compile(r'corresponding\s+authors?\s*[:\-]', re.IGNORECASE)
+_CORRESP_LINE_RE = re.compile(r'\*?\s*corresponding\s+authors?\s*[:\-]', re.IGNORECASE)
 
 # Matches Unicode superscript runs OR digits glued directly to a letter (regular superscripts)
-_AUTHOR_MARKER_RE = re.compile(r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+\*?|(?<=[A-Za-z])\d+\*?)')
+_AUTHOR_MARKER_RE = re.compile(r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+,?\*?|(?<=[A-Za-z])\d+,?\*?)')
 
 # Heading / structure detection
 # Numbered heading: "1. Introduction", "2.1 Chemicals", "3.2.1 Sub" — must start capital after number
@@ -43,11 +43,17 @@ _O_NS       = "{urn:schemas-microsoft-com:office:office}"
 # OMML namespace for Word equations
 _MATH_NS    = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
 
-_FIG_CAPTION_RE    = re.compile(r'^fig(ure)?\.?\s*\d*', re.IGNORECASE)
-_FIG_CAPTION_FULL  = re.compile(r'^fig(?:ure)?\.?\s*(\d+)', re.IGNORECASE)
+# Figure label: Fig/Figure, optional dot, then space/hyphen/nothing, optional parens around number
+_FIG_CAPTION_RE    = re.compile(r'^fig(?:ure)?\.?[\s\-]?\s*\(?\d', re.IGNORECASE)
+_FIG_CAPTION_FULL  = re.compile(r'^fig(?:ure)?\.?[\s\-]?\s*\(?(\d+)\)?', re.IGNORECASE)
+# Table label: same separator rules as figures
+_TABLE_CAPTION_RE  = re.compile(r'^table\.?[\s\-]?\s*\(?\d', re.IGNORECASE)
+_TABLE_CAPTION_FULL = re.compile(r'^table\.?[\s\-]?\s*\(?(\d+)\)?', re.IGNORECASE)
+# Non-numbered items that should never get a Fig-N tag
+_SKIP_FIG_RE       = re.compile(r'^(?:graphical\s+abstract|schema(?:[-\s]\d*)?)\b', re.IGNORECASE)
 # Body-text figure references: "Fig. 2 presents/shows/illustrates/is/demonstrates..."
 _FIG_REF_VERB_RE   = re.compile(
-    r'^fig(?:ure)?\.?\s*\d+[a-z]?\s+(?:present|show|illustrat|depict|display|is\b|are\b|demonstrat)',
+    r'^fig(?:ure)?\.?[\s\-]?\s*\(?(\d+)\)?[a-z]?\s+(?:present|show|illustrat|depict|display|is\b|are\b|demonstrat)',
     re.IGNORECASE
 )
 
@@ -121,9 +127,6 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
     1. Numbered heading regex — most reliable for NFP manuscripts:
        "1. Introduction" → h2, "2.1 Chemicals" → h3
     2. DOCX style name — used when no number prefix is present.
-    3. Bold-paragraph heuristic — catches documents that use manual bold
-       formatting instead of Word Heading styles (e.g. "Introduction",
-       "Materials and Methods" styled as bold 12pt Normal paragraphs).
     """
     m = _NUMBERED_HEADING_RE.match(text)
     if m:
@@ -138,18 +141,6 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
         return "h2"
     if style == "Heading 3":
         return "h3"
-
-    # Bold-paragraph heuristic: a short, fully-bold line whose first character
-    # is uppercase and that doesn't end with sentence-terminating punctuation is
-    # very likely a section heading, not a body sentence.
-    if (is_bold
-            and 2 <= len(text) <= 80
-            and text[0].isupper()
-            and text[-1] not in '.,:;!?'
-            and not _FIG_CAPTION_RE.match(text)):
-        # Known top-level section names (Introduction, Methods, …) → h2;
-        # specialist subsection titles (SEM Analysis, Characterization, …) → h3.
-        return "h2" if _guess_section_type(text) != "Other" else "h3"
 
     return None
 
@@ -173,6 +164,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
     para_idx  = 0
     tbl_idx   = 0
     fig_counter = 0
+    last_nonempty_text = ""
     idx = 0
 
     while idx < body_len:
@@ -202,6 +194,8 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
 
         style_name = p.style.name if p.style else ""
         text = p.text.strip()
+        if text:
+            last_nonempty_text = text
         is_bold = all(run.bold for run in p.runs if run.text.strip()) and bool(p.runs)
         is_list = "list" in style_name.lower()
         font_size = None
@@ -229,22 +223,36 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
 
         # ── Inline image detection (before blank-text skip) ──────────────────
         if phase == "body" and _has_image(p._element):
-            fig_counter += 1
             caption = ""
-            # 1) Check the immediately adjacent paragraph first (skip up to 2 blanks)
+            idx_delta = para_delta = 0
+            # Look back: preceding non-empty paragraph was a skip label
+            is_skip = bool(_SKIP_FIG_RE.match(last_nonempty_text)) if last_nonempty_text else False
+
+            # Look ahead for a caption or skip label (skip up to 2 blanks)
             lookahead = 0
-            for _skip in range(3):
+            for _la in range(3):
                 if idx + lookahead < body_len and body_children[idx + lookahead].tag == _W_P:
                     next_text = _para_el_text(body_children[idx + lookahead])
-                    if next_text and _FIG_CAPTION_RE.match(next_text):
-                        caption = next_text
-                        idx += lookahead + 1
-                        para_idx += lookahead + 1
-                        break
                     if next_text:
-                        break  # non-empty, non-caption paragraph — stop
+                        if _SKIP_FIG_RE.match(next_text):
+                            is_skip = True
+                            idx_delta = lookahead + 1
+                            para_delta = lookahead + 1
+                        elif _FIG_CAPTION_RE.match(next_text):
+                            caption = next_text
+                            idx_delta = lookahead + 1
+                            para_delta = lookahead + 1
+                        break
                     lookahead += 1
-            # 2) Fall back to the pre-scanned caption map if still no caption found
+
+            idx      += idx_delta
+            para_idx += para_delta
+
+            if is_skip:
+                continue  # Graphical Abstract / Schema — skip Fig-N numbering
+
+            fig_counter += 1
+            # Fall back to the pre-scanned caption map if still no caption found
             if not caption and fig_counter in fig_captions:
                 caption = fig_captions[fig_counter]
             fig_block = _build_figure_block(p, doc, fig_counter, caption)
@@ -406,7 +414,7 @@ def _math_para_to_image(p) -> str:
     import subprocess, tempfile, os, glob, shutil, base64 as _b64, io
     from docx import Document as _Doc
     from copy import deepcopy
-    from PIL import Image, ImageChops
+    from PIL import Image
 
     tmp_doc = _Doc()
     # Remove the default blank paragraph so only the equation appears
@@ -427,13 +435,7 @@ def _math_para_to_image(p) -> str:
         pngs = glob.glob(os.path.join(out_dir, "*.png"))
         if pngs:
             img = Image.open(pngs[0]).convert("RGB")
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            bbox = ImageChops.difference(img, bg).getbbox()
-            if bbox:
-                pad = 8
-                w, h = img.size
-                img = img.crop((max(0, bbox[0] - pad), max(0, bbox[1] - pad),
-                               min(w, bbox[2] + pad), min(h, bbox[3] + pad)))
+            img = _smart_crop(img)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             return f"data:image/png;base64,{_b64.b64encode(buf.getvalue()).decode()}"
@@ -443,6 +445,61 @@ def _math_para_to_image(p) -> str:
         os.unlink(src)
         shutil.rmtree(out_dir, ignore_errors=True)
     return ""
+
+
+def _smart_crop(img, pad: int = 8):
+    """
+    Crop to actual content area, skipping thin border-only rows/columns.
+
+    Word EMF drawing canvases often have a 1–3 px border around a large blank
+    area with the chart content in one corner.  A simple bounding-box crop
+    keeps the border (and the blank interior it encloses) because the border
+    pixels extend to all four edges of the canvas.
+
+    This function finds rows/columns whose non-white pixel count exceeds a
+    threshold sized relative to the image dimensions.  A 1–3 px border line
+    contributes only 2–6 non-white pixels per row, well below the threshold,
+    so it is excluded and only the chart-content rows/columns survive.
+    """
+    try:
+        import numpy as np
+        arr = np.array(img.convert("RGB"))
+        h, w = arr.shape[:2]
+        non_white = (arr < 250).any(axis=2)          # True where pixel ≠ white
+        row_density = non_white.sum(axis=1).astype(int)
+        col_density = non_white.sum(axis=0).astype(int)
+
+        # Minimum pixels per row/col to be counted as real content.
+        # A 1-3 px border contributes ≤ 6 px; chart content contributes much more.
+        min_px = max(6, min(w, h) // 30)
+
+        cr = np.where(row_density >= min_px)[0]
+        cc = np.where(col_density >= min_px)[0]
+        if not len(cr) or not len(cc):
+            # Fallback: any non-white pixel
+            cr = np.where(row_density > 0)[0]
+            cc = np.where(col_density > 0)[0]
+        if not len(cr) or not len(cc):
+            return img
+
+        return img.crop((
+            max(0, int(cc[0])  - pad),
+            max(0, int(cr[0])  - pad),
+            min(w, int(cc[-1]) + pad + 1),
+            min(h, int(cr[-1]) + pad + 1),
+        ))
+    except ImportError:
+        # numpy unavailable — fall back to simple bounding-box crop
+        from PIL import ImageChops
+        bg = img._new(img.mode, img.size)
+        bg.paste((255, 255, 255), (0, 0, img.width, img.height))
+        bbox = ImageChops.difference(img.convert("RGB"),
+                                     img.convert("RGB").point(lambda _: 255)).getbbox()
+        if not bbox:
+            return img
+        l, t, r, b = bbox
+        return img.crop((max(0, l - pad), max(0, t - pad),
+                         min(img.width, r + pad), min(img.height, b + pad)))
 
 
 _WEASYPRINT_OK_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif",
@@ -459,7 +516,7 @@ def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
     # Use LibreOffice headless for EMF/WMF (most reliable cross-platform renderer)
     try:
         import subprocess, tempfile, os, glob, shutil
-        from PIL import Image, ImageChops
+        from PIL import Image
         suffix = ".emf" if "emf" in ct else ".wmf"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as src:
             src.write(blob)
@@ -473,16 +530,7 @@ def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
             pngs = glob.glob(os.path.join(out_dir, "*.png"))
             if pngs:
                 img = Image.open(pngs[0]).convert("RGB")
-                # Auto-crop whitespace left by LibreOffice's page canvas
-                bg = Image.new("RGB", img.size, (255, 255, 255))
-                bbox = ImageChops.difference(img, bg).getbbox()
-                if bbox:
-                    pad = 8
-                    w, h = img.size
-                    img = img.crop((
-                        max(0, bbox[0] - pad), max(0, bbox[1] - pad),
-                        min(w, bbox[2] + pad), min(h, bbox[3] + pad)
-                    ))
+                img = _smart_crop(img)
                 import io
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
@@ -671,7 +719,7 @@ def _split_author_line(line: str) -> list:
         if not name_raw:
             continue
 
-        sup_num = marker.replace('*', '').translate(_SUP_TO_NUM)
+        sup_num = marker.replace('*', '').replace(',', '').translate(_SUP_TO_NUM)
         is_corresp = '*' in marker
 
         first, last = _split_name(name_raw)

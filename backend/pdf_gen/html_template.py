@@ -46,10 +46,18 @@ def _linkify(text: str) -> str:
 
 
 def _citify(text: str) -> str:
-    """Wrap bracket citations [N], [N–M], [N, M] with internal anchor links."""
+    """Wrap bracket citations [N], [N–M], [N, M] with internal anchor links, expanding ranges."""
     def replace_bracket(m):
         inner = m.group(1)
-        linked = re.sub(r'\d+', lambda nm: f'<a href="#ref-{nm.group(0)}" style="color:{NAVY};">{nm.group(0)}</a>', inner)
+        nums = []
+        for part in re.split(r',', inner):
+            part = part.strip()
+            range_match = re.match(r'(\d+)\s*[–—-]\s*(\d+)', part)
+            if range_match:
+                nums.extend(range(int(range_match.group(1)), int(range_match.group(2)) + 1))
+            elif re.match(r'^\d+$', part):
+                nums.append(int(part))
+        linked = ','.join(f'<a href="#ref-{n}" style="color:{NAVY};">{n}</a>' for n in nums)
         return f'[{linked}]'
     return _CITE_RE.sub(replace_bracket, text)
 
