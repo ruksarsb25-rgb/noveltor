@@ -1,14 +1,19 @@
 FROM python:3.11-slim
 
-# WeasyPrint system deps + LibreOffice for EMF/WMF/OMML conversion
+# WeasyPrint system deps (no-recommends is safe here)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libcairo2 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     libffi-dev \
     shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
+# LibreOffice needs its recommends to install cleanly
+RUN apt-get update && apt-get install -y \
     libreoffice \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
