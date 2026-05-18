@@ -270,12 +270,165 @@ Also added a dedicated **"Browse files"** button inside the upload zone as a rel
 
 ---
 
+---
+
+### 2026-05-18 — Figure Images, Equations, Exports, Web Viewer, Deployment
+
+#### Feature 1 — Real Figure Images from DOCX (EMF/WMF Support)
+
+**Problem:** Figures were showing `[Figure N]` placeholder boxes — images were not extracted.
+
+**Root cause chain:**
+1. `_has_image()` only checked DrawingML (`wp:inline`/`wp:anchor`) but older DOCX files embed images via VML (`v:imagedata`).
+2. Even when found, EMF/WMF format images (used by Microsoft Office) cannot be decoded by Pillow on macOS/Linux.
+
+**Fixes (`parser/docx_parser.py`):**
+- Added VML namespace constants: `_VML_NS`, `_O_NS`
+- Updated `_has_image()` to also check `v:imagedata` elements
+- Added `_build_figure_block()` with two extraction paths: DrawingML first, VML fallback
+- Added `_blob_to_data_uri()`:
+  - Direct base64 for supported formats (PNG, JPEG, GIF, SVG, WebP, BMP)
+  - LibreOffice headless for EMF/WMF: `soffice --headless --convert-to png`
+  - Pillow auto-crop on LibreOffice output: `ImageChops.difference(img, bg).getbbox()` with 8px padding to remove the A4 whitespace canvas
+  - Pillow fallback for other formats
+
+**System dependency:** `brew install libreoffice` (macOS dev), installed in Docker for production.
+
+**`requirements.txt`:** Added `Pillow>=10.0.0`
+
+---
+
+#### Bug Fix — Blank Figure List Before References
+
+**Symptom:** A block of empty `[Figure 1]`, `[Figure 2]` boxes appeared before the References section.
+
+**Root cause:** `article.figures` (top-level array without `data_uri`) was being rendered in two places — `ExportScreen.jsx` AND `html_template.py` — even though figures are already embedded inline inside section content blocks.
+
+**Fix:** Removed the standalone `figures_html` rendering block from `html_template.py` and the `article.figures` render loop from `ExportScreen.jsx`. Figures now only render inline within their section.
+
+---
+
+#### Bug Fix — Captions Missing for Non-Adjacent Figures
+
+**Symptom:** Figures 2, 4, 5, 6 showed no captions — only Figure 1 had one.
+
+**Root cause:** The parser looked for a caption only in the immediately following paragraph. In these documents, captions are placed separately from figures (several paragraphs away).
+
+**Fix:** Two-stage caption lookup in `_extract_structure()`:
+1. **Lookahead**: scan up to 2 blank paragraphs after each image for a `Fig. N` caption
+2. **Pre-scan fallback**: `_collect_fig_captions(doc)` pre-scans the entire document before parsing begins, building a `{fig_number: caption_text}` map. Prefers real captions (e.g. "Fig. 2. SEM micrographs…") over body-text references (e.g. "Fig. 2 presents…") via priority scoring.
+
+---
+
+#### Feature 2 — Clickable Citation Links
+
+**`ExportScreen.jsx`:** Added `citify()` function using regex `\[([\d,\s–—-]+)\]` — wraps each number inside citation brackets with `<a href="#ref-N">`. Applied to paragraph text and table cells.
+
+**`html_template.py` and `html_web_template.py`:** Same `_citify()` function applied to all rendered text. Reference list items get `id="ref-{num}"` anchors so in-page jumping works.
+
+---
+
+#### Feature 3 — OMML Equation Rendering
+
+**Symptom:** Word equations (OMML format, `oMath` XML) were silently dropped.
+
+**Fix (`parser/docx_parser.py`):**
+- Added `_MATH_NS` namespace constant
+- Added `_has_math(p_element)` — checks for `oMath` elements
+- Added `_math_para_to_image(p)` — copies the equation paragraph into a minimal temp DOCX, converts to PNG via LibreOffice, auto-crops with Pillow
+- New `"equation"` block type added to section content; rendered as centered `<img>` (max 80px height) in both ExportScreen and html_template
+
+---
+
+#### Feature 4 — HTML Export, Web ZIP Export, In-Browser Previews
+
+**New backend endpoints (`app.py`):**
+- `POST /export/html` — returns standalone HTML file as attachment
+- `POST /export/web-zip` — returns ZIP containing `{slug}/index.html`
+- `POST /preview/web` — returns HTML inline (no attachment header) for browser display
+
+**New file `pdf_gen/html_web_template.py`** — JATS Editor-style web viewer:
+- Left TOC sidebar (280px): auto-generated from sections, active section highlighting via `IntersectionObserver`
+- Right icon sidebar (44px): 5 vertical tab buttons
+- Slide-out panel (340px): Metrics, Media, Tables, References, Contributors panels
+- Affiliation index building for numbered superscripts on author names
+- All text passed through `_citify(_linkify())`
+
+**`ExportScreen.jsx`:**
+- Added `previewXml()` — opens syntax-highlighted XML in new tab (synchronous `window.open` to avoid popup blocker, then `document.write`)
+- Added `previewWeb()` — opens new tab synchronously, writes "Building…" placeholder, fetches HTML from backend as blob, navigates via `win.location.replace(blobUrl)` (avoids `document.write` breaking on large base64-embedded images)
+- Added `downloadHtml()`, `downloadWebZip()` functions
+- Added 6 buttons to header: View XML, Download XML, View Web, Download HTML, Download Web ZIP, Download PDF
+
+**`vite.config.js`:** Added `/preview` proxy rule.
+
+---
+
+#### Bug Fix — Heading Detection for Bold-Style Documents
+
+**Symptom:** A new uploaded document placed all content in "Other" — no sections detected.
+
+**Root cause:** The document used **bold 12pt Normal paragraphs** as headings instead of numbered headings or Word Heading styles. `_classify_heading()` only detected those two patterns.
+
+**Fix (`parser/docx_parser.py`):**
+- Added `is_bold: bool = False` parameter to `_classify_heading()`
+- Added third detection path: if a paragraph is bold, 2–80 chars, starts uppercase, doesn't end with sentence-terminating punctuation, and isn't a figure caption → classify as heading
+- Uses `_guess_section_type()` to distinguish h2 (Introduction, Methods, Results…) from h3 (SEM Analysis, Characterization, etc.)
+- Updated call site in `_extract_structure()` to pass `is_bold=is_bold`
+
+---
+
+#### Bug Fix — Abstract Skipped When Graphical Abstract Present
+
+**Symptom:** After the bold heading fix, documents with a "Graphical Abstract" section before the real abstract lost their abstract content.
+
+**Root cause:** "Graphical Abstract" (short, bold) now triggered the bold heuristic → `heading_level="h3"` → the `authors` phase exited early to `body`, never reaching the real "Abstract" heading.
+
+**Fix:** Added `heading_explicit = _classify_heading(text, style_name)` (no bold heuristic) alongside `heading_level`. Phase transitions in `pre_title` and `authors` now use `heading_explicit` (strict detection only). The `abstract` phase and body section handling continue using the full `heading_level` (with bold heuristic) so real section headings still work after the abstract.
+
+---
+
+#### Bug Fix — Author Last Name from Trailing Initials
+
+**Old behaviour:** "Ravi K N" → `first_name="Ravi K N"`, `last_name=""`
+
+**New behaviour (South Indian / abbreviated suffix names):**
+
+| Input | first_name | last_name |
+|---|---|---|
+| `Shankar S` | `Shankar` | `S` |
+| `Ravi K N` | `Ravi` | `K N` |
+| `Manju Kumar S N` | `Manju Kumar` | `S N` |
+| `Mylarappa M` | `Mylarappa` | `M` |
+| `S.K RaviKumar` | `S.K` | `RaviKumar` |
+
+**Fix (`_split_name()` in `parser/docx_parser.py`):** Walks backwards through name tokens collecting consecutive single-letter initials (with optional trailing dot) into `last_name`. Non-initial last token still becomes `last_name` normally (covers Western names and "S.K RaviKumar" style).
+
+---
+
+#### Deployment — Render (Docker)
+
+**New files:**
+- `backend/Dockerfile` — `python:3.11-slim` base, installs WeasyPrint system libs and LibreOffice, runs `gunicorn` with 1 worker / 4 threads / 120s timeout
+- `backend/.dockerignore`
+- `render.yaml` — Blueprint config: backend as Docker web service, frontend as static site
+- `frontend/src/utils/api.js` — exports `API_BASE = import.meta.env.VITE_API_BASE || ""`. Empty in dev (Vite proxy handles routing); set to deployed backend URL in production.
+
+**Modified for production API routing:**
+- `UploadScreen.jsx` — `/parse` → `` `${API_BASE}/parse` ``
+- `SectionsScreen.jsx` — `/autotag` → `` `${API_BASE}/autotag` ``
+- `ExportScreen.jsx` — all 6 fetch calls updated
+- `requirements.txt` — added `gunicorn>=21.2.0`
+
+**GitHub repo:** https://github.com/ruksarsb25-rgb/noveltor.git
+
+---
+
 ## Known Limitations / Future Work
 
 - [ ] OJS integration (explicitly out of scope for now)
 - [ ] DOCX parsing is heuristic — complex author blocks or non-standard formatting may need manual correction
-- [ ] Figures are detected structurally but image binaries are not extracted (only captions + placeholders)
 - [ ] No user authentication — single-user local tool
 - [ ] AI auto-tag requires API key; gracefully degrades (button shows server error toast)
-- [ ] PDF export uses client-side html2pdf.js — complex layouts may need tuning
 - [ ] ISSN online field left blank by default per NFP workflow
+- [ ] Free-tier Render backend spins down after inactivity — first request after idle takes ~30s to wake
