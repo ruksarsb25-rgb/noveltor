@@ -797,6 +797,13 @@ def _split_name(name: str) -> tuple:
     if not parts:
         return ("", "")
     if len(parts) == 1:
+        # Handle "S.N.Manjula" — period-separated initials followed by a full word
+        dot_parts = [s for s in parts[0].split(".") if s]
+        if len(dot_parts) >= 2:
+            *initials, last_part = dot_parts
+            if (all(len(i) == 1 and i.isalpha() for i in initials)
+                    and len(last_part) > 1 and last_part.isalpha()):
+                return (".".join(initials) + ".", last_part)
         return (parts[0], "")
 
     def _is_initial(token: str) -> bool:
