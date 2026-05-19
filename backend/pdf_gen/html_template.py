@@ -498,10 +498,10 @@ def build_html(article: dict) -> str:
         for i, ref in enumerate(references, 1):
             if isinstance(ref, dict):
                 num  = ref.get("number", i)
-                text = _linkify(ref.get("raw_text") or "")
+                text = _linkify((ref.get("raw_text") or "").rstrip("."))
                 doi  = ref.get("doi") or ""
             else:
-                num, text, doi = i, _linkify(str(ref or "")), ""
+                num, text, doi = i, _linkify(str(ref or "").rstrip(".")), ""
             if doi:
                 doi_url  = _html.escape(f"https://doi.org/{doi}", quote=True)
                 doi_link = f' <a class="ref-doi" href="{doi_url}">doi:&nbsp;{_e(doi)}</a>'

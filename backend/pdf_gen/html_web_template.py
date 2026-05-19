@@ -221,7 +221,7 @@ def build_web_html(article: dict) -> str:
     # ── References ───────────────────────────────────────────────────────────
     ref_items_html = ""
     for i, ref in enumerate(references, 1):
-        text = ref.get("raw_text") or str(ref) if isinstance(ref, dict) else str(ref)
+        text = (ref.get("raw_text") or str(ref) if isinstance(ref, dict) else str(ref)).rstrip(".")
         doi_r = ref.get("doi") or "" if isinstance(ref, dict) else ""
         doi_link = (f' <a href="https://doi.org/{_e(doi_r)}" target="_blank" style="color:{NAVY};">doi:{_e(doi_r)}</a>'
                     if doi_r else "")
