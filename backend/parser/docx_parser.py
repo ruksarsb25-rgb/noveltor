@@ -234,7 +234,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             continue
 
         # ── Inline image detection (before blank-text skip) ──────────────────
-        if phase == "body" and _has_image(p._element):
+        if _has_image(p._element):
             caption = ""
             skip_label = skip_caption = ""
             idx_delta = para_delta = 0
@@ -274,6 +274,13 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                                 para_delta = lookahead + 1
                             break
                         lookahead += 1
+
+            # Pre-body images that are not skip images (Graphical Abstract etc.)
+            # are ignored — only skip images are included from any phase
+            if not is_skip and phase != "body":
+                if text:
+                    last_nonempty_text = text
+                continue
 
             idx      += idx_delta
             para_idx += para_delta
