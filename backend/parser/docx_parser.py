@@ -58,6 +58,18 @@ _FIG_REF_VERB_RE   = re.compile(
 )
 
 
+# Strip leading "Fig. N:" / "Figure (12)." / "Table 1 -" prefix from caption text
+_FIG_LABEL_PREFIX_RE = re.compile(
+    r'^(?:fig(?:ure)?|table)\.?[\s\-]?\s*\(?\d+\)?[a-z]?\s*[:\.\-]\s*',
+    re.IGNORECASE
+)
+
+
+def _strip_fig_label(text: str) -> str:
+    """Remove 'Fig. N:' / 'Figure (12).' prefix; keep only the description."""
+    return _FIG_LABEL_PREFIX_RE.sub("", text).strip()
+
+
 def _collect_fig_captions(doc) -> dict:
     """Pre-scan entire document and return {fig_number (int): caption_text}.
 
@@ -224,17 +236,24 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
         # ── Inline image detection (before blank-text skip) ──────────────────
         if phase == "body" and _has_image(p._element):
             caption = ""
+            skip_label = skip_caption = ""
             idx_delta = para_delta = 0
+
             # Look back: preceding non-empty paragraph was a skip label
             is_skip = bool(_SKIP_FIG_RE.match(last_nonempty_text)) if last_nonempty_text else False
+            if is_skip:
+                raw = last_nonempty_text
+                skip_label, skip_caption = (raw.split(":", 1) + [""])[:2]
+                skip_label = skip_label.strip(); skip_caption = skip_caption.strip()
 
             # Check if the image paragraph itself carries caption/skip text
-            # (Word sometimes places the caption in the same <w:p> as the image)
             if text:
                 if _SKIP_FIG_RE.match(text):
                     is_skip = True
+                    skip_label, skip_caption = (text.split(":", 1) + [""])[:2]
+                    skip_label = skip_label.strip(); skip_caption = skip_caption.strip()
                 elif _FIG_CAPTION_RE.match(text):
-                    caption = text
+                    caption = _strip_fig_label(text)
 
             if not caption and not is_skip:
                 # Look ahead for a caption or skip label (skip up to 2 blanks)
@@ -245,10 +264,12 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                         if next_text:
                             if _SKIP_FIG_RE.match(next_text):
                                 is_skip = True
+                                skip_label, skip_caption = (next_text.split(":", 1) + [""])[:2]
+                                skip_label = skip_label.strip(); skip_caption = skip_caption.strip()
                                 idx_delta = lookahead + 1
                                 para_delta = lookahead + 1
                             elif _FIG_CAPTION_RE.match(next_text):
-                                caption = next_text
+                                caption = _strip_fig_label(next_text)
                                 idx_delta = lookahead + 1
                                 para_delta = lookahead + 1
                             break
@@ -258,12 +279,20 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             para_idx += para_delta
 
             if is_skip:
-                continue  # Graphical Abstract / Schema — skip Fig-N numbering
+                # Include image without Fig-N numbering
+                skip_block = _build_figure_block(p, doc, 0, skip_caption)
+                skip_block.update({"id": "", "label": skip_label or "Image", "href": ""})
+                if current_section is None:
+                    current_section = _new_section("", "Other")
+                target = (current_section["subsections"][-1]["content"]
+                          if current_section["subsections"] else current_section["content"])
+                target.append(skip_block)
+                continue
 
             fig_counter += 1
             # Fall back to the pre-scanned caption map if still no caption found
             if not caption and fig_counter in fig_captions:
-                caption = fig_captions[fig_counter]
+                caption = _strip_fig_label(fig_captions[fig_counter])
             fig_block = _build_figure_block(p, doc, fig_counter, caption)
             state["figures"].append({k: fig_block[k] for k in ("id", "label", "caption", "href")})
             if current_section is None:
