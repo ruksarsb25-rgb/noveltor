@@ -50,7 +50,7 @@ _FIG_CAPTION_FULL  = re.compile(r'^fig(?:ure)?\.?[\s\-]?\s*\(?(\d+)\)?', re.IGNO
 _TABLE_CAPTION_RE  = re.compile(r'^table\.?[\s\-]?\s*\(?\d', re.IGNORECASE)
 _TABLE_CAPTION_FULL = re.compile(r'^table\.?[\s\-]?\s*\(?(\d+)\)?', re.IGNORECASE)
 # Non-numbered items that should never get a Fig-N tag
-_SKIP_FIG_RE       = re.compile(r'^(?:graphical\s+abstract|schema(?:[-\s]\d*)?)\b', re.IGNORECASE)
+_SKIP_FIG_RE       = re.compile(r'^(?:graphical\s+abstract|sch(?:ema|eme)(?:[-\s]\d*)?)\b', re.IGNORECASE)
 # Body-text figure references: "Fig. 2 presents/shows/illustrates/is/demonstrates..."
 _FIG_REF_VERB_RE   = re.compile(
     r'^fig(?:ure)?\.?[\s\-]?\s*\(?(\d+)\)?[a-z]?\s+(?:present|show|illustrat|depict|display|is\b|are\b|demonstrat)',
