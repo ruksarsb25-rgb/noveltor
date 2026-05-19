@@ -2,7 +2,7 @@
 
 **Project:** Novel Future Publishers — JATS XML Article Formatting Tool  
 **Repo:** `/Users/kareem/Github/NovelTOR`  
-**Last updated:** 2026-05-16 (end of day)
+**Last updated:** 2026-05-18 (end of day)
 
 ---
 
@@ -421,6 +421,57 @@ Also added a dedicated **"Browse files"** button inside the upload zone as a rel
 - `requirements.txt` — added `gunicorn>=21.2.0`
 
 **GitHub repo:** https://github.com/ruksarsb25-rgb/noveltor.git
+
+---
+
+---
+
+### 2026-05-18 (Session 2) — Parser & Export Fixes
+
+#### Fix 1 — Citation Range Expansion
+`_citify()` in both templates now expands ranges like `[17–24]` → `[17,18,19,20,21,22,23,24]` with individual anchor links per number.
+
+#### Fix 2 — Bold Headings Without Section Number Ignored
+Removed the bold heuristic from `_classify_heading()` entirely. Only explicitly numbered headings or Word Heading styles are now recognised as section headings, preventing decorative bold lines from corrupting the section list.
+
+#### Fix 3 — Corresponding Author `*` Prefix Format
+`_CORRESP_LINE_RE` updated to accept `*Corresponding author:` (leading asterisk) in addition to the plain `Corresponding author:` format.
+
+#### Fix 4 — Author Superscript Comma Strip
+`_AUTHOR_MARKER_RE` now allows a comma before `*` (e.g. `Ravikumar5,*`). The comma and asterisk are stripped when building the numeric affiliation key.
+
+#### Fix 5 — Expanded Figure / Table Caption Patterns
+Updated `_FIG_CAPTION_RE` and `_TABLE_CAPTION_RE` to match all common abbreviation variants:
+`Fig. n`, `Fig.n`, `Fig n`, `Figure. n`, `Figure-n`, `Fig-1`, `Fig. (n)`, `Fig.(n)`, `Fig (n)`, `Figure. (n)`, `Figure-(n)`, `Fig-(1)` — and equivalents for Table.
+
+#### Fix 6 — Graphical Abstract / Schema Images No Longer Skipped
+`_SKIP_FIG_RE` matched "schema" but not "scheme" — fixed to `sch(?:ema|eme)`. Images matching the pattern now render as **unnumbered figure blocks** with their original label (e.g. "Graphical Abstract", "Scheme-1") instead of being dropped.
+
+#### Fix 7 — Double Figure Captions Removed
+Template was prepending "Figure N." while the caption text still contained "Fig.N:" prefix. Added `_strip_fig_label()` to strip the `Fig. N:` / `Figure (12).` prefix from caption text before rendering. Result: only the template-generated label appears.
+
+#### Fix 8 — Graphical Abstract Missing (Phase Guard)
+The image detection block had `if phase == "body"` — Graphical Abstract images appear in the pre-body phase and were silently dropped. Fixed: image detection now runs for all phases; non-skip images in pre-body are still ignored, but skip images (Graphical Abstract, Scheme) are included.
+
+#### Fix 9 — Period-Separated Author Name Format
+`_split_name()` now handles `S.N.Manjula` style: if a single space-token matches `(X\.)+Word` (single-letter initials + multi-char surname), it splits at the last period segment.
+
+| Input | first_name | last_name |
+|---|---|---|
+| `S.N.Manjula` | `S.N.` | `Manjula` |
+| `K.Ravikumar` | `K.` | `Ravikumar` |
+
+#### Fix 10 — Smart Crop Over-Trimming Chart Borders
+`_smart_crop()` was cutting the top edge off charts that have a thick outer border frame (e.g. Fig. 5). The outer border top line was being removed, making the inset sub-chart appear to float above it. Fixed with a `min_blank_run=30` guard: a side is only cropped if there are ≥30 px of blank canvas on that edge — preventing fringe/rounding losses while still removing large blank EMF canvas areas.
+
+#### Fix 11 — DOI Added to PDF Export
+The article's DOI (entered in the Metadata screen) was present in the web preview but missing from the PDF output. Added DOI rendering to `html_template.py` below the dates row as a clickable `https://doi.org/…` link.
+
+#### Fix 12 — Trailing Periods Stripped from URLs in References
+`_linkify()` in both templates now strips trailing `.,;` from matched URLs before building the `href`, and re-appends the stripped punctuation as plain text after the link.
+
+#### Fix 13 — Trailing Periods Stripped from Reference Lines
+All reference `raw_text` values are now `.rstrip(".")` before rendering in both templates, removing the sentence-ending period that academic reference formatters typically append.
 
 ---
 
