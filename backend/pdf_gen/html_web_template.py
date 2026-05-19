@@ -24,8 +24,12 @@ def _linkify(text: str) -> str:
         if i % 2 == 0:
             out.append(_html.escape(part, quote=False))
         else:
-            url = _html.escape(part, quote=True)
-            out.append(f'<a href="{url}" target="_blank" rel="noreferrer" style="color:{NAVY};">{_html.escape(part, quote=False)}</a>')
+            clean = part.rstrip(".,;")
+            tail  = part[len(clean):]
+            url   = _html.escape(clean, quote=True)
+            out.append(f'<a href="{url}" target="_blank" rel="noreferrer" style="color:{NAVY};">{_html.escape(clean, quote=False)}</a>')
+            if tail:
+                out.append(_html.escape(tail, quote=False))
     return "".join(out)
 
 
