@@ -437,6 +437,19 @@ def build_html(article: dict) -> str:
         if date_parts else ""
     )
 
+    # ── DOI ──────────────────────────────────────────────────────────
+    doi_val = (article.get("doi") or "").strip()
+    if doi_val:
+        doi_url = _html.escape(f"https://doi.org/{doi_val}", quote=True)
+        doi_html = (
+            f'<div class="dates-row">'
+            f'<span class="date-label">DOI:</span>&nbsp;'
+            f'<a class="ref-doi" href="{doi_url}">{_e(doi_val)}</a>'
+            f'</div>'
+        )
+    else:
+        doi_html = ""
+
     # ── Abstract + Keywords ──────────────────────────────────────────
     abstract_html = ""
     if abstract:
@@ -514,6 +527,7 @@ def build_html(article: dict) -> str:
 {affiliations_html}
 {corresp_html}
 {dates_html}
+{doi_html}
 {abstract_html}
 {body_html}
 {refs_html}
