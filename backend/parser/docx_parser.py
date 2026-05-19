@@ -492,7 +492,7 @@ def _math_para_to_image(p) -> str:
     return ""
 
 
-def _smart_crop(img, pad: int = 8):
+def _smart_crop(img, pad: int = 8, min_blank_run: int = 30):
     """
     Crop to actual content area, skipping thin border-only rows/columns.
 
@@ -502,9 +502,10 @@ def _smart_crop(img, pad: int = 8):
     pixels extend to all four edges of the canvas.
 
     This function finds rows/columns whose non-white pixel count exceeds a
-    threshold sized relative to the image dimensions.  A 1–3 px border line
-    contributes only 2–6 non-white pixels per row, well below the threshold,
-    so it is excluded and only the chart-content rows/columns survive.
+    threshold sized relative to the image dimensions.  Only crops a given side
+    if the blank run on that side is at least min_blank_run pixels — this
+    prevents over-cropping images where the content already fills most of the
+    canvas (e.g. charts with thick outer border frames near the image edge).
     """
     try:
         import numpy as np
@@ -527,12 +528,14 @@ def _smart_crop(img, pad: int = 8):
         if not len(cr) or not len(cc):
             return img
 
-        return img.crop((
-            max(0, int(cc[0])  - pad),
-            max(0, int(cr[0])  - pad),
-            min(w, int(cc[-1]) + pad + 1),
-            min(h, int(cr[-1]) + pad + 1),
-        ))
+        # Only crop a side if the blank run there is large enough to be real
+        # canvas waste (not just a 1-2 px anti-alias fringe or rounding gap).
+        top    = max(0, int(cr[0])  - pad) if cr[0]       > min_blank_run else 0
+        bottom = min(h, int(cr[-1]) + pad + 1) if (h - 1 - cr[-1]) > min_blank_run else h
+        left   = max(0, int(cc[0])  - pad) if cc[0]       > min_blank_run else 0
+        right  = min(w, int(cc[-1]) + pad + 1) if (w - 1 - cc[-1]) > min_blank_run else w
+
+        return img.crop((left, top, right, bottom))
     except ImportError:
         # numpy unavailable — fall back to simple bounding-box crop
         from PIL import ImageChops
