@@ -22,7 +22,9 @@ _NUMBERED_HEADING_RE = re.compile(r'^(\d+)([\.\d]*?)\.?\s+([A-Z])')
 _ABSTRACT_RE = re.compile(r'^abstract\b', re.IGNORECASE)
 _KEYWORDS_RE = re.compile(r'^key\s*words?\s*[:\-]', re.IGNORECASE)
 # "References", "5. References", "5 References" — at end of heading
-_REFS_HEADING_RE = re.compile(r'^(?:\d+[\.\d]*\.?\s+)?references?\s*$', re.IGNORECASE)
+# Matches: "References", "References:", "References;", "References :", "References .",
+#           "5. References", "5 References:", etc.
+_REFS_HEADING_RE = re.compile(r'^(?:\d+[\.\d]*\.?\s+)?references?\s*[;:.,]?\s*$', re.IGNORECASE)
 # Reference list entry: "[1] ..." or "1. ..." — numbered formats
 _REF_ENTRY_RE = re.compile(r'^\[?\d+[\]\.]\s+\S')
 # Bullet characters that start a reference item

@@ -7,6 +7,7 @@ export default function UploadScreen({ onParsed }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | parsing | done | error
   const [errorMsg, setErrorMsg] = useState("");
+  const [warnMsg, setWarnMsg] = useState("");
   const [fileName, setFileName] = useState("");
   const inputRef = useRef(null);
 
@@ -42,6 +43,17 @@ export default function UploadScreen({ onParsed }) {
       }));
 
       setStatus("done");
+
+      if (!data.references || data.references.length === 0) {
+        setWarnMsg(
+          "⚠️ No References section was found in this document. " +
+          "Make sure your document contains a heading that reads " +
+          ""References", "References:", "References;" or similar."
+        );
+      } else {
+        setWarnMsg("");
+      }
+
       onParsed(data);
     } catch (e) {
       setErrorMsg(e.message || "Parsing failed");
@@ -121,6 +133,13 @@ export default function UploadScreen({ onParsed }) {
           </div>
         )}
 
+        {warnMsg && (
+          <div className="mt-4 bg-amber-50 border border-amber-300 rounded-md p-3 text-amber-800 text-sm flex items-start gap-2">
+            <span className="shrink-0 text-base leading-5">⚠️</span>
+            <span>{warnMsg.replace(/^⚠️\s*/, "")}</span>
+          </div>
+        )}
+
         <input
           ref={inputRef}
           type="file"
@@ -135,6 +154,7 @@ export default function UploadScreen({ onParsed }) {
             onClick={() => {
               setStatus("idle");
               setErrorMsg("");
+              setWarnMsg("");
               setFileName("");
             }}
             disabled={status === "parsing"}
