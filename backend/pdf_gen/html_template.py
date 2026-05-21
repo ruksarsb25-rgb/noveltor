@@ -27,18 +27,22 @@ _TYPE_LABELS = {
 def _e(s) -> str:
     return _html.escape(str(s or ""), quote=False)
 
+_SUB_SUP_RE = re.compile(r'&lt;(/?(?:sub|sup))&gt;', re.IGNORECASE)
+
+def _e_fmt(s) -> str:
+    """Like _e but restores <sub>/<sup> tags from parser-produced text."""
+    return _SUB_SUP_RE.sub(r'<\1>', _html.escape(str(s or ""), quote=False))
+
 
 _URL_RE  = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
 _CITE_RE = re.compile(r'\[([\d,\s–—-]+)\]')
-
-
 def _linkify(text: str) -> str:
-    """Escape text for HTML and wrap bare URLs in <a> tags."""
+    """Escape text for HTML (preserving sub/sup) and wrap bare URLs in <a> tags."""
     parts = _URL_RE.split(str(text or ""))
     out = []
     for i, part in enumerate(parts):
         if i % 2 == 0:
-            out.append(_html.escape(part, quote=False))
+            out.append(_e_fmt(part))
         else:
             clean = part.rstrip(".,;")
             tail  = part[len(clean):]
@@ -193,13 +197,15 @@ body {{
 .data-table .even td {{ background: #F5F7FA; }}
 
 /* ── Figures ── */
-.figure-wrap {{ margin: 10pt 0; page-break-inside: avoid; }}
+.figure-wrap {{ margin: 10pt 0; }}
+.figure-img  {{ max-width: 100%; max-height: 170mm; display: block; margin: 0 auto; }}
 .figure-box  {{
     background: #F5F7FA; border: 1pt solid #ddd;
     height: 80pt; text-align: center; padding-top: 33pt;
     font-size: 9pt; color: #bbb; border-radius: 2pt; margin-bottom: 3pt;
 }}
-.figure-caption {{ font-size: 9pt; font-style: italic; text-align: center; color: #555; }}
+.figure-caption {{ font-size: 9pt; font-style: italic; text-align: center; color: #555;
+                   page-break-before: avoid; }}
 
 /* ── References ── */
 .references-section {{ margin-top: 14pt; }}
@@ -267,11 +273,11 @@ def _pub_date_str(article: dict) -> str:
 
 
 def _render_figure_block(fig: dict) -> str:
-    label   = _e(fig.get("label") or "Figure")
-    caption = _e(fig.get("caption") or "")
+    label   = _e_fmt(fig.get("label") or "Figure")
+    caption = _e_fmt(fig.get("caption") or "")
     data_uri = fig.get("data_uri") or ""
     if data_uri:
-        img_html = f'<img src="{data_uri}" style="max-width:100%;display:block;margin:0 auto;" />'
+        img_html = f'<img src="{data_uri}" class="figure-img" />'
     else:
         img_html = f'<div class="figure-box">[{label}]</div>'
     cap_html = f'<div class="figure-caption"><strong>{label}.</strong> {caption}</div>' if caption else \
@@ -333,7 +339,7 @@ def _render_content_blocks(sec: dict) -> str:
 def build_html(article: dict) -> str:
     authors      = article.get("authors") or []
     journal_name = (article.get("journal_name") or "Novel Future Proceedings").strip()
-    article_type = article.get("article_type") or "Conference Proceeding"
+    article_type = article.get("article_type") or "Research Article"
     title        = article.get("title") or "Untitled"
     abstract     = (article.get("abstract") or "").strip()
     keywords     = article.get("keywords") or []
@@ -365,7 +371,6 @@ def build_html(article: dict) -> str:
 <div class="page-header">
   <div class="hdr-left">
     {left_logo}
-    <div class="hdr-publisher-label">Novel Publisher</div>
   </div>
   <div class="hdr-center">
     <div class="from-label">From the journal:</div>
@@ -386,7 +391,7 @@ def build_html(article: dict) -> str:
     )
 
     # ── Title ────────────────────────────────────────────────────────
-    title_html = f'<div class="article-title">{_e(title)}</div>'
+    title_html = f'<div class="article-title">{_e_fmt(title)}</div>'
 
     # ── Authors ──────────────────────────────────────────────────────
     author_parts = []
@@ -456,19 +461,18 @@ def build_html(article: dict) -> str:
 
     # ── Abstract + Keywords ──────────────────────────────────────────
     abstract_html = ""
+    keywords_html = ""
     if abstract:
-        kw_html = ""
-        if keywords:
-            kw_html = (
-                f'<div class="keywords-line">'
-                f'<strong>Keywords:</strong> {_e("; ".join(keywords))}</div>'
-            )
         abstract_html = f"""
 <hr class="section-rule">
 <div class="abstract-heading">Abstract</div>
 <div class="abstract-text">{_linkify(abstract)}</div>
-{kw_html}
 """
+    if keywords:
+        keywords_html = (
+            f'<div class="keywords-line">'
+            f'<strong>Keywords:</strong> {_e("; ".join(keywords))}</div>'
+        )
 
     # ── Body sections ────────────────────────────────────────────────
     body_parts = []
@@ -478,13 +482,13 @@ def build_html(article: dict) -> str:
 
         sec_html = '<div class="body-section">'
         if heading:
-            sec_html += f'<div class="section-heading">{_e(heading)}</div>'
+            sec_html += f'<div class="section-heading">{_e_fmt(heading)}</div>'
         sec_html += _render_content_blocks(sec)
         for sub in subsecs:
             sh = (sub.get("heading") or "").strip()
             sec_html += '<div class="subsection">'
             if sh:
-                sec_html += f'<div class="subsection-heading">{_e(sh)}</div>'
+                sec_html += f'<div class="subsection-heading">{_e_fmt(sh)}</div>'
             sec_html += _render_content_blocks(sub)
             sec_html += "</div>"
         sec_html += "</div>"
@@ -497,14 +501,19 @@ def build_html(article: dict) -> str:
         ref_items = []
         for i, ref in enumerate(references, 1):
             if isinstance(ref, dict):
-                num  = ref.get("number", i)
-                text = _linkify((ref.get("raw_text") or "").rstrip("."))
-                doi  = ref.get("doi") or ""
+                num = ref.get("number", i)
+                raw = (ref.get("raw_text") or "").rstrip(".")
+                doi = ref.get("doi") or ""
+                if doi:
+                    raw = re.sub(r'\bhttps?://doi\.org/\S+', '', raw, flags=re.IGNORECASE)
+                    raw = re.sub(r'\bdoi:\s*10\.\S+', '', raw, flags=re.IGNORECASE)
+                    raw = ' '.join(raw.split())
+                text = _linkify(raw)
             else:
                 num, text, doi = i, _linkify(str(ref or "").rstrip(".")), ""
             if doi:
                 doi_url  = _html.escape(f"https://doi.org/{doi}", quote=True)
-                doi_link = f' <a class="ref-doi" href="{doi_url}">doi:&nbsp;{_e(doi)}</a>'
+                doi_link = f' <a class="ref-doi" href="{doi_url}">https://doi.org/{_e(doi)}</a>'
             else:
                 doi_link = ""
             ref_items.append(f'<div class="ref-item" id="ref-{num}">[{num}]&nbsp;{text}{doi_link}</div>')
@@ -533,6 +542,7 @@ def build_html(article: dict) -> str:
 {dates_html}
 {doi_html}
 {abstract_html}
+{keywords_html}
 {body_html}
 {refs_html}
 </body>

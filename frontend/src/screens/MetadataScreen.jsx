@@ -218,7 +218,11 @@ export default function MetadataScreen({ article, onChange, onNext }) {
 
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Journal Name">
-            <Input value={article.journal_name} onChange={(e) => set("journal_name", e.target.value)} />
+            <Select
+              value={article.journal_name}
+              onChange={(e) => set("journal_name", e.target.value)}
+              options={["Novel Energy", "Photomaterials & Devices", "Novel Future Proceedings"]}
+            />
           </FormField>
           <FormField label="Publisher Name">
             <Input value={article.publisher_name} onChange={(e) => set("publisher_name", e.target.value)} />

@@ -40,7 +40,7 @@ export function defaultArticle() {
     pub_date_month: "",
     pub_date_day: "",
     doi: "",
-    article_type: "Conference Proceeding",
+    article_type: "Research Article",
     received_date: "",
     accepted_date: "",
     published_date: "",

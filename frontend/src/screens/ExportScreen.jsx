@@ -21,10 +21,12 @@ function citify(text) {
 }
 
 function safeHtml(text) {
+  // Escape HTML but preserve <sub>/<sup> tags produced by the parser.
   return (text || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/&lt;(\/?(?:sub|sup))&gt;/gi, "<$1>");
 }
 import toast from "react-hot-toast";
 import { API_BASE } from "../utils/api.js";
@@ -61,14 +63,15 @@ function PreviewFigure({ figure }) {
   return (
     <div className="my-4 text-center">
       {dataUri ? (
-        <img src={dataUri} alt={label} className="max-w-full mx-auto rounded" />
+        <img src={dataUri} alt={label} className="max-w-full mx-auto rounded" style={{ maxHeight: "70vh" }} />
       ) : (
         <div className="border border-slate-200 bg-slate-50 py-10 rounded text-slate-400 text-sm">
           [{label}]
         </div>
       )}
       <div className="text-xs text-slate-600 mt-1 italic">
-        <strong>{label}{caption ? "." : ""}</strong>{caption ? ` ${caption}` : ""}
+        <strong dangerouslySetInnerHTML={{ __html: safeHtml(label) + (caption ? "." : "") }} />
+        {caption && <span dangerouslySetInnerHTML={{ __html: " " + safeHtml(caption) }} />}
       </div>
     </div>
   );
@@ -80,7 +83,7 @@ function PreviewTable({ table }) {
   return (
     <div className="my-4">
       {(table.caption || table.label) && (
-        <div className="text-sm font-semibold text-slate-700 mb-1">{table.caption || table.label}</div>
+        <div className="text-sm font-semibold text-slate-700 mb-1" dangerouslySetInnerHTML={{ __html: safeHtml(table.caption || table.label) }} />
       )}
       <div className="overflow-x-auto rounded border border-slate-200">
         <table className="min-w-full text-xs">
@@ -134,7 +137,7 @@ function ArticlePreview({ article }) {
         )}
       </div>
 
-      {article.title && <h1 className="text-center">{article.title}</h1>}
+      {article.title && <h1 className="text-center" dangerouslySetInnerHTML={{ __html: safeHtml(article.title) }} />}
       {authors && <div className="authors text-center">{authors}</div>}
       {affiliations.map((aff, i) => (
         <div key={i} className="text-center text-xs text-slate-500 mb-1">{aff}</div>
@@ -148,22 +151,22 @@ function ArticlePreview({ article }) {
       {article.abstract && (
         <div className="abstract my-6">
           <div className="abstract-title">Abstract</div>
-          <p>{article.abstract}</p>
-          {article.keywords?.length > 0 && (
-            <div className="keywords mt-2">
-              <strong>Keywords:</strong> {article.keywords.join("; ")}
-            </div>
-          )}
+          <p dangerouslySetInnerHTML={{ __html: safeHtml(article.abstract) }} />
+        </div>
+      )}
+      {article.keywords?.length > 0 && (
+        <div className="keywords mb-4">
+          <strong>Keywords:</strong> {article.keywords.join("; ")}
         </div>
       )}
 
       {(article.sections || []).map((sec, i) => (
         <div key={i}>
-          {sec.heading && <h2>{sec.heading}</h2>}
+          {sec.heading && <h2 dangerouslySetInnerHTML={{ __html: safeHtml(sec.heading) }} />}
           {renderContentBlocks(sec)}
           {(sec.subsections || []).map((sub, j) => (
             <div key={j}>
-              {sub.heading && <h3>{sub.heading}</h3>}
+              {sub.heading && <h3 dangerouslySetInnerHTML={{ __html: safeHtml(sub.heading) }} />}
               {renderContentBlocks(sub)}
             </div>
           ))}
@@ -174,12 +177,19 @@ function ArticlePreview({ article }) {
         <div className="ref-list mt-6">
           <h2>References</h2>
           {article.references.map((ref, i) => {
-            const text = typeof ref === "object" && ref !== null ? ref.raw_text : ref;
-            const doi  = typeof ref === "object" && ref !== null ? ref.doi : "";
+            const raw = typeof ref === "object" && ref !== null ? ref.raw_text : ref;
+            const doi = typeof ref === "object" && ref !== null ? ref.doi : "";
+            let cleanText = (raw || "").trim();
+            if (doi) {
+              cleanText = cleanText
+                .replace(/\bhttps?:\/\/doi\.org\/\S+/gi, "")
+                .replace(/\bdoi:\s*10\.\S+/gi, "")
+                .trim().replace(/\s+/g, " ");
+            }
             const doiHtml = doi
-              ? ` <a href="https://doi.org/${doi}" target="_blank" rel="noreferrer" style="color:#0F3557;">doi:&nbsp;${doi}</a>`
+              ? ` <a href="https://doi.org/${doi}" target="_blank" rel="noreferrer" style="color:#0F3557;">https://doi.org/${doi}</a>`
               : "";
-            const fullHtml = `[${i + 1}]&nbsp;${linkify(safeHtml(text || ""))}${doiHtml}`;
+            const fullHtml = `[${i + 1}]&nbsp;${linkify(safeHtml(cleanText))}${doiHtml}`;
             return <p key={i} id={`ref-${i + 1}`} dangerouslySetInnerHTML={{ __html: fullHtml }} />;
           })}
         </div>

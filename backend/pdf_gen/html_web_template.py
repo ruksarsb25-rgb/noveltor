@@ -13,8 +13,9 @@ def _e(s) -> str:
     return _html.escape(str(s or ""), quote=False)
 
 
-_URL_RE  = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
-_CITE_RE = re.compile(r'\[([\d,\s–—-]+)\]')
+_URL_RE      = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
+_CITE_RE     = re.compile(r'\[([\d,\s–—-]+)\]')
+_SUB_SUP_RE  = re.compile(r'&lt;(/?(?:sub|sup))&gt;', re.IGNORECASE)
 
 
 def _linkify(text: str) -> str:
@@ -22,7 +23,7 @@ def _linkify(text: str) -> str:
     out = []
     for i, part in enumerate(parts):
         if i % 2 == 0:
-            out.append(_html.escape(part, quote=False))
+            out.append(_e_fmt(part))
         else:
             clean = part.rstrip(".,;")
             tail  = part[len(clean):]
@@ -49,6 +50,11 @@ def _citify(text: str) -> str:
     return _CITE_RE.sub(replace_bracket, text)
 
 
+def _e_fmt(s) -> str:
+    """HTML-escape but restore <sub>/<sup> tags produced by the parser."""
+    return _SUB_SUP_RE.sub(r'<\1>', _html.escape(str(s or ""), quote=False))
+
+
 def _render_content_blocks(content: list) -> str:
     html = ""
     for block in content:
@@ -69,8 +75,8 @@ def _render_content_blocks(content: list) -> str:
 
 
 def _render_figure(fig: dict) -> str:
-    label   = _e(fig.get("label") or "Figure")
-    caption = _e(fig.get("caption") or "")
+    label   = _e_fmt(fig.get("label") or "Figure")
+    caption = _e_fmt(fig.get("caption") or "")
     data_uri = fig.get("data_uri") or ""
     fig_id   = _e(fig.get("id") or "")
     img_html = (f'<img src="{data_uri}" alt="{label}" style="max-width:100%;border-radius:4px;"/>'
@@ -128,7 +134,7 @@ def _collect_tables(article: dict) -> list:
 
 
 def build_web_html(article: dict) -> str:
-    title       = _e(article.get("title") or "Untitled")
+    title       = _e_fmt(article.get("title") or "Untitled")
     abstract    = article.get("abstract") or ""
     keywords    = article.get("keywords") or []
     sections    = article.get("sections") or []
@@ -153,11 +159,11 @@ def build_web_html(article: dict) -> str:
     for sec in sections:
         heading = sec.get("heading") or ""
         sec_id  = re.sub(r'\W+', '-', heading).strip('-').lower()
-        toc_items.append(f'<li class="toc-sec"><a href="#{sec_id}">{_e(heading)}</a></li>')
+        toc_items.append(f'<li class="toc-sec"><a href="#{sec_id}">{_e_fmt(heading)}</a></li>')
         for sub in sec.get("subsections") or []:
             sub_heading = sub.get("heading") or ""
             sub_id = re.sub(r'\W+', '-', sub_heading).strip('-').lower()
-            toc_items.append(f'<li class="toc-sub"><a href="#{sub_id}">{_e(sub_heading)}</a></li>')
+            toc_items.append(f'<li class="toc-sub"><a href="#{sub_id}">{_e_fmt(sub_heading)}</a></li>')
     toc_html = "<ul>" + "".join(toc_items) + "</ul>"
 
     # ── Authors block ────────────────────────────────────────────────────────
@@ -210,22 +216,26 @@ def build_web_html(article: dict) -> str:
     for sec in sections:
         heading = sec.get("heading") or ""
         sec_id  = re.sub(r'\W+', '-', heading).strip('-').lower()
-        body_html += f'<h2 id="{sec_id}" class="sec-heading">{_e(heading)}</h2>'
+        body_html += f'<h2 id="{sec_id}" class="sec-heading">{_e_fmt(heading)}</h2>'
         body_html += _render_content_blocks(sec.get("content") or [])
         for sub in sec.get("subsections") or []:
             sub_heading = sub.get("heading") or ""
             sub_id = re.sub(r'\W+', '-', sub_heading).strip('-').lower()
-            body_html += f'<h3 id="{sub_id}" class="subsec-heading">{_e(sub_heading)}</h3>'
+            body_html += f'<h3 id="{sub_id}" class="subsec-heading">{_e_fmt(sub_heading)}</h3>'
             body_html += _render_content_blocks(sub.get("content") or [])
 
     # ── References ───────────────────────────────────────────────────────────
     ref_items_html = ""
     for i, ref in enumerate(references, 1):
-        text = (ref.get("raw_text") or str(ref) if isinstance(ref, dict) else str(ref)).rstrip(".")
-        doi_r = ref.get("doi") or "" if isinstance(ref, dict) else ""
-        doi_link = (f' <a href="https://doi.org/{_e(doi_r)}" target="_blank" style="color:{NAVY};">doi:{_e(doi_r)}</a>'
+        raw   = (ref.get("raw_text") or str(ref) if isinstance(ref, dict) else str(ref)).rstrip(".")
+        doi_r = (ref.get("doi") or "") if isinstance(ref, dict) else ""
+        if doi_r:
+            raw = re.sub(r'\bhttps?://doi\.org/\S+', '', raw, flags=re.IGNORECASE)
+            raw = re.sub(r'\bdoi:\s*10\.\S+', '', raw, flags=re.IGNORECASE)
+            raw = ' '.join(raw.split())
+        doi_link = (f' <a href="https://doi.org/{_e(doi_r)}" target="_blank" style="color:{NAVY};">https://doi.org/{_e(doi_r)}</a>'
                     if doi_r else "")
-        ref_items_html += f'<div class="ref-item" id="ref-{i}">[{i}] {_linkify(text)}{doi_link}</div>'
+        ref_items_html += f'<div class="ref-item" id="ref-{i}">[{i}] {_linkify(raw)}{doi_link}</div>'
 
     # ── Right panel content ───────────────────────────────────────────────────
     # Metrics panel
@@ -247,8 +257,8 @@ def build_web_html(article: dict) -> str:
         f'<div class="panel-fig"><a href="#{_e(f.get("id",""))}">'
         + (f'<img src="{f["data_uri"]}" alt="{_e(f.get("label",""))}" style="max-width:100%;border-radius:3px;margin-bottom:4px;"/>'
            if f.get("data_uri") else f'<div class="fig-placeholder">[{_e(f.get("label","Figure"))}]</div>')
-        + f'</a><div class="panel-fig-label">{_e(f.get("label",""))}</div>'
-        + (f'<div class="panel-fig-caption">{_e(f.get("caption",""))}</div>' if f.get("caption") else "")
+        + f'</a><div class="panel-fig-label">{_e_fmt(f.get("label",""))}</div>'
+        + (f'<div class="panel-fig-caption">{_e_fmt(f.get("caption",""))}</div>' if f.get("caption") else "")
         + '</div>'
         for f in all_figs
     ) or "<p class='empty-panel'>No figures</p>"
@@ -381,7 +391,7 @@ p.body-text {{ font-size: 13px; line-height: 1.8; color: #333; margin-bottom: 12
 
 /* ── Figures ── */
 .figure-block {{ margin: 20px 0; text-align: center; }}
-.figure-block img {{ max-width: 100%; border-radius: 4px; }}
+.figure-block img {{ max-width: 100%; max-height: 70vh; border-radius: 4px; }}
 .fig-caption {{ font-size: 12px; font-style: italic; color: #555; margin-top: 6px; text-align: center; }}
 .fig-placeholder {{ background: #f0f2f5; border: 1px solid #dde; padding: 40px; color: #aaa; border-radius: 4px; }}
 
@@ -498,11 +508,11 @@ table.data-table tr.even td {{ background: #f7f9fc; }}
     <div id="authors">
       <div class="authors-line">{authors_line}</div>
       <div class="affils">{affils_html}</div>
-      {kw_html}
     </div>
 
     <!-- Abstract -->
-    {f'<div class="abstract-box" id="abstract"><h3>Abstract</h3><p>{_e(abstract)}</p></div>' if abstract else ""}
+    {f'<div class="abstract-box" id="abstract"><h3>Abstract</h3><p>{_e_fmt(abstract)}</p></div>' if abstract else ""}
+    {kw_html}
 
     <!-- Body sections -->
     {body_html}

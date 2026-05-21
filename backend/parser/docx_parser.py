@@ -3,6 +3,7 @@ DOCX parsing logic using python-docx.
 Extracts structured metadata and content from academic manuscripts.
 """
 import re
+import html as _html_lib
 from docx import Document
 from docx.oxml.ns import qn as _qn
 
@@ -29,9 +30,61 @@ _REF_BULLET_RE = re.compile(r'^[•\-\*●◆▪]\s+')
 # DOI in any format: "doi: 10.xxx" or "https://doi.org/10.xxx"
 _DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)([^\s,;<>\)]+)', re.IGNORECASE)
 
-_W_TBL = _qn('w:tbl')
-_W_P   = _qn('w:p')
-_W_T   = _qn('w:t')
+_W_TBL    = _qn('w:tbl')
+_W_P      = _qn('w:p')
+_W_T      = _qn('w:t')
+_W_VALIGN = _qn('w:vertAlign')
+_W_VAL    = _qn('w:val')
+_W_RPR    = _qn('w:rPr')
+
+
+def _para_text_with_fmt(p) -> str:
+    """Extract paragraph text, wrapping subscript/superscript runs in <sub>/<sup> tags."""
+    parts = []
+    for run in p.runs:
+        t = run.text
+        if not t:
+            continue
+        rpr = run._element.find(_W_RPR)
+        vert = None
+        if rpr is not None:
+            va = rpr.find(_W_VALIGN)
+            if va is not None:
+                vert = va.get(_W_VAL)
+        escaped = _html_lib.escape(t, quote=False)
+        if vert == 'subscript':
+            parts.append(f'<sub>{escaped}</sub>')
+        elif vert == 'superscript':
+            parts.append(f'<sup>{escaped}</sup>')
+        else:
+            parts.append(escaped)
+    return ''.join(parts)
+
+
+def _cell_text_with_fmt(cell) -> str:
+    """Extract all text from a table cell across all paragraphs, preserving sub/sup."""
+    parts = []
+    for para in cell.paragraphs:
+        if parts:
+            parts.append(' ')
+        for run in para.runs:
+            t = run.text
+            if not t:
+                continue
+            rpr = run._element.find(_W_RPR)
+            vert = None
+            if rpr is not None:
+                va = rpr.find(_W_VALIGN)
+                if va is not None:
+                    vert = va.get(_W_VAL)
+            escaped = _html_lib.escape(t, quote=False)
+            if vert == 'subscript':
+                parts.append(f'<sub>{escaped}</sub>')
+            elif vert == 'superscript':
+                parts.append(f'<sup>{escaped}</sup>')
+            else:
+                parts.append(escaped)
+    return ''.join(parts).strip()
 
 # Drawing XML namespaces for inline/anchor image detection
 _DRAWING_NS = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
@@ -323,11 +376,11 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
         # ── pre_title ────────────────────────────────────────────────────────
         if phase == "pre_title":
             if heading_explicit == "h1" or (is_bold and font_size and font_size >= 14):
-                state["title"] = text
+                state["title"] = _para_text_with_fmt(p)
                 phase = "authors"
                 continue
             if para_idx <= 5:
-                state["title"] = text
+                state["title"] = _para_text_with_fmt(p)
                 phase = "authors"
                 continue
 
@@ -359,7 +412,8 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 phase = "body"
                 # intentional fall-through — this heading starts the body
             else:
-                state["abstract"] = (state["abstract"] + " " + text).strip()
+                fmt = _para_text_with_fmt(p)
+                state["abstract"] = (state["abstract"] + " " + fmt).strip()
                 continue
 
         # ── body — keyword line after abstract ───────────────────────────────
@@ -383,12 +437,13 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             is_numbered  = bool(_REF_ENTRY_RE.match(text))
             starts_lower = bool(text) and text[0].islower()
 
+            fmt = _para_text_with_fmt(p)
             if is_list_item or is_bullet or is_numbered or not state["references"]:
-                state["references"].append(text)
+                state["references"].append(fmt)
             elif starts_lower and state["references"]:
-                state["references"][-1] += " " + text
+                state["references"][-1] += " " + fmt
             else:
-                state["references"].append(text)
+                state["references"].append(fmt)
             continue
 
         # ── body sections ────────────────────────────────────────────────────
@@ -396,15 +451,15 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             if heading_level in ("h1", "h2"):
                 if current_section:
                     state["sections"].append(current_section)
-                current_section = _new_section(text, _guess_section_type(text))
+                current_section = _new_section(_para_text_with_fmt(p), _guess_section_type(text))
             elif heading_level == "h3":
                 if current_section is None:
                     current_section = _new_section("", "Other")
-                current_section["subsections"].append({"heading": text, "content": []})
+                current_section["subsections"].append({"heading": _para_text_with_fmt(p), "content": []})
             else:
                 if current_section is None:
                     current_section = _new_section("", "Other")
-                block = {"type": "paragraph", "text": text}
+                block = {"type": "paragraph", "text": _para_text_with_fmt(p)}
                 if current_section["subsections"]:
                     current_section["subsections"][-1]["content"].append(block)
                 else:
@@ -884,7 +939,7 @@ def _row_cells(row) -> list:
         cid = id(cell._tc)
         if cid not in seen:
             seen.add(cid)
-            cells.append(cell.text.strip())
+            cells.append(_cell_text_with_fmt(cell))
     return cells
 
 
