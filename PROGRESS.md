@@ -2,7 +2,7 @@
 
 **Project:** Novel Future Publishers — JATS XML Article Formatting Tool  
 **Repo:** `/Users/kareem/Github/NovelTOR`  
-**Last updated:** 2026-05-18 (end of day)
+**Last updated:** 2026-05-21
 
 ---
 
@@ -214,7 +214,10 @@ Also added a dedicated **"Browse files"** button inside the upload zone as a rel
 **Frontend:**
 - `store.js` `defaultArticle()` — added `tables: []`
 - `App.jsx` `handleParsed` — merges `parsed.tables`
-- `SectionsScreen.jsx` — added `TablePreview` component (first 3 rows as HTML table, "+N more rows" footer) and a Tables panel between Figures and References with editable label/caption fields and Remove button
+- `
+
+
+\SectionsScreen.jsx` — added `TablePreview` component (first 3 rows as HTML table, "+N more rows" footer) and a Tables panel between Figures and References with editable label/caption fields and Remove button
 
 #### Bug Fix — Journal Name Default Corrupted After Parse
 
@@ -272,206 +275,151 @@ Also added a dedicated **"Browse files"** button inside the upload zone as a rel
 
 ---
 
-### 2026-05-18 — Figure Images, Equations, Exports, Web Viewer, Deployment
+### 2026-05-18 — Sub/Superscript, DOI Dedup, PDF Layout, Web Export
 
-#### Feature 1 — Real Figure Images from DOCX (EMF/WMF Support)
+#### Feature — Sub/Superscript Throughout Document
 
-**Problem:** Figures were showing `[Figure N]` placeholder boxes — images were not extracted.
+**Problem:** Chemical formulas like Ag₂O, H₂O and mathematical superscripts were not rendered as `<sub>`/`<sup>` in any output (preview, PDF, web).
 
-**Root cause chain:**
-1. `_has_image()` only checked DrawingML (`wp:inline`/`wp:anchor`) but older DOCX files embed images via VML (`v:imagedata`).
-2. Even when found, EMF/WMF format images (used by Microsoft Office) cannot be decoded by Pillow on macOS/Linux.
+**Root cause:** `python-docx`'s `p.text` strips all run-level formatting. Sub/sup info lives in `w:rPr/w:vertAlign[@w:val="subscript"|"superscript"]` and was never read.
 
-**Fixes (`parser/docx_parser.py`):**
-- Added VML namespace constants: `_VML_NS`, `_O_NS`
-- Updated `_has_image()` to also check `v:imagedata` elements
-- Added `_build_figure_block()` with two extraction paths: DrawingML first, VML fallback
-- Added `_blob_to_data_uri()`:
-  - Direct base64 for supported formats (PNG, JPEG, GIF, SVG, WebP, BMP)
-  - LibreOffice headless for EMF/WMF: `soffice --headless --convert-to png`
-  - Pillow auto-crop on LibreOffice output: `ImageChops.difference(img, bg).getbbox()` with 8px padding to remove the A4 whitespace canvas
-  - Pillow fallback for other formats
+**Fix — Backend (`parser/docx_parser.py`):**
+- Added `import html as _html_lib`
+- Added constants: `_W_VALIGN`, `_W_VAL`, `_W_RPR`
+- Added `_para_text_with_fmt(p)` — iterates runs, wraps sub/sup runs in `<sub>`/`<sup>` HTML tags, HTML-escapes plain text
+- Added `_cell_text_with_fmt(cell)` — same treatment for table cells
+- Applied `_para_text_with_fmt` everywhere text is captured: title, abstract, section headings, subsection headings, body paragraphs, references
+- Updated `_row_cells()` to use `_cell_text_with_fmt`
 
-**System dependency:** `brew install libreoffice` (macOS dev), installed in Docker for production.
+**Fix — Frontend (`ExportScreen.jsx`):**
+- Updated `safeHtml()` to restore `<sub>`/`<sup>` after HTML-escaping:
+  ```js
+  .replace(/&lt;(\/?(?:sub|sup))&gt;/gi, "<$1>")
+  ```
+- Applied `dangerouslySetInnerHTML={{ __html: safeHtml(...) }}` to title, abstract, section headings, subsection headings, figure labels/captions, table captions
+- Removed old `subscriptFormulas` regex function entirely
 
-**`requirements.txt`:** Added `Pillow>=10.0.0`
-
----
-
-#### Bug Fix — Blank Figure List Before References
-
-**Symptom:** A block of empty `[Figure 1]`, `[Figure 2]` boxes appeared before the References section.
-
-**Root cause:** `article.figures` (top-level array without `data_uri`) was being rendered in two places — `ExportScreen.jsx` AND `html_template.py` — even though figures are already embedded inline inside section content blocks.
-
-**Fix:** Removed the standalone `figures_html` rendering block from `html_template.py` and the `article.figures` render loop from `ExportScreen.jsx`. Figures now only render inline within their section.
+**Fix — Backend PDF (`pdf_gen/html_template.py`) and Web (`pdf_gen/html_web_template.py`):**
+- Added `_SUB_SUP_RE` and `_e_fmt(s)` helper — HTML-escapes text then restores `<sub>`/`<sup>` tags
+- Replaced all direct `html.escape()` calls with `_e_fmt()`
+- Updated `_linkify()` to use `_e_fmt()` for non-URL text segments
+- Removed `_subscript_formulas` and `_CHEM_RE` functions
 
 ---
 
-#### Bug Fix — Captions Missing for Non-Adjacent Figures
+#### Bug Fix — Double DOI URL in References
 
-**Symptom:** Figures 2, 4, 5, 6 showed no captions — only Figure 1 had one.
+**Symptom:** Reference entries showed the DOI hyperlink twice — once embedded in `raw_text` (the linkified URL from the parser) and once from the structured `doi` field.
 
-**Root cause:** The parser looked for a caption only in the immediately following paragraph. In these documents, captions are placed separately from figures (several paragraphs away).
+**Fix — Frontend (`ExportScreen.jsx`):** When a `doi` field is present, strip `https://doi.org/…` and `doi: 10.…` patterns from `cleanText` before rendering, then append a single formatted link from the `doi` field.
 
-**Fix:** Two-stage caption lookup in `_extract_structure()`:
-1. **Lookahead**: scan up to 2 blank paragraphs after each image for a `Fig. N` caption
-2. **Pre-scan fallback**: `_collect_fig_captions(doc)` pre-scans the entire document before parsing begins, building a `{fig_number: caption_text}` map. Prefers real captions (e.g. "Fig. 2. SEM micrographs…") over body-text references (e.g. "Fig. 2 presents…") via priority scoring.
+**Fix — Backend (`html_template.py`, `html_web_template.py`):** Same stripping logic applied before `_linkify()` runs on the reference `raw_text`.
 
 ---
 
-#### Feature 2 — Clickable Citation Links
+#### Fix — Keywords Placement
 
-**`ExportScreen.jsx`:** Added `citify()` function using regex `\[([\d,\s–—-]+)\]` — wraps each number inside citation brackets with `<a href="#ref-N">`. Applied to paragraph text and table cells.
+**Problem:** Keywords appeared inside the abstract block in both the HTML preview and PDF.
 
-**`html_template.py` and `html_web_template.py`:** Same `_citify()` function applied to all rendered text. Reference list items get `id="ref-{num}"` anchors so in-page jumping works.
+**Fix:** Moved the Keywords line to render as a separate block immediately **after** the abstract `<div>`, in both `ExportScreen.jsx`, `html_template.py`, and `html_web_template.py`.
 
 ---
 
-#### Feature 3 — OMML Equation Rendering
+#### Fix — PDF Image Overflow / Blank Pages
 
-**Symptom:** Word equations (OMML format, `oMath` XML) were silently dropped.
+**Problem:** Large figures caused blank page gaps because they overflowed the page height.
+
+**Fix (`html_template.py`):**
+- Added `.figure-img { max-height: 170mm; width: auto; }` CSS rule
+- Removed `page-break-inside: avoid` from `.figure-wrap` so WeasyPrint can flow text after a large image instead of pushing it to a new page
+- Added `page-break-before: avoid` on `.figure-caption` to keep caption with image
+
+**Fix (`ExportScreen.jsx`, `html_web_template.py`):** Set `maxHeight: "70vh"` on figure `<img>` elements.
+
+---
+
+#### Fix — Remove "Novel Publisher" Label from PDF Header
+
+**Problem:** The PDF header showed "Novel Publisher" as plain text behind the logo thumbnail.
+
+**Fix (`html_template.py`):** Removed the `<div class="hdr-publisher-label">Novel Publisher</div>` element from the header template.
+
+---
+
+#### Feature — Journal Name Dropdown (Metadata Screen)
+
+Changed the Journal Name field from a free-text `<Input>` to a `<Select>` with three fixed options:
+- Novel Energy
+- Photomaterials & Devices
+- Novel Future Proceedings
+
+**File:** `frontend/src/screens/MetadataScreen.jsx`
+
+Updated default article type from `"Conference Proceeding"` to `"Research Article"` in `store.js` and `html_template.py`.
+
+---
+
+#### Feature — Web HTML Export
+
+Added two new export modes:
+
+**`POST /preview/web`** — returns a self-contained HTML document for instant browser preview (opens in new tab).
+
+**`POST /export/web-zip`** — returns a ZIP archive containing `index.html` + extracted figure images as separate PNG files.
+
+**`pdf_gen/html_web_template.py`** — new template file mirroring `html_template.py` but optimised for web (fluid layout, responsive breakpoints, TOC sidebar, social share icons).
+
+**Frontend (`ExportScreen.jsx`):** Added "View Web" and "Download Web ZIP" buttons with loading states.
+
+---
+
+### 2026-05-18 (Session 2) — References Heading Detection + Missing-References Warning
+
+#### Fix — References Heading Detection (All Punctuation Variants)
+
+**Problem:** Parser only detected a heading as "References" if it matched exactly. Variations like `References:`, `References;`, `References.`, and numbered variants (`4. References`) were silently ignored, causing the entire references section to be missed.
 
 **Fix (`parser/docx_parser.py`):**
-- Added `_MATH_NS` namespace constant
-- Added `_has_math(p_element)` — checks for `oMath` elements
-- Added `_math_para_to_image(p)` — copies the equation paragraph into a minimal temp DOCX, converts to PNG via LibreOffice, auto-crops with Pillow
-- New `"equation"` block type added to section content; rendered as centered `<img>` (max 80px height) in both ExportScreen and html_template
+```python
+_REFS_HEADING_RE = re.compile(
+    r'^(?:\d+[\.\d]*\.?\s+)?references?\s*[;:.,]?\s*$', re.IGNORECASE
+)
+```
+Handles: leading section number, optional trailing `: ; . ,` and trailing whitespace.
+
+#### Feature — Missing References Alert (Upload Screen)
+
+After a successful parse, if `data.references` is empty the app now shows a persistent amber warning banner:
+
+> ⚠️ No References section was found in this document. Make sure your document contains a heading that reads "References", "References:", "References;" or similar.
+
+**File:** `frontend/src/screens/UploadScreen.jsx` — added `warnMsg` state; amber warning rendered below the error block; cleared on Reset.
 
 ---
 
-#### Feature 4 — HTML Export, Web ZIP Export, In-Browser Previews
+### 2026-05-21 — Parser Image Fix + Build Fix
 
-**New backend endpoints (`app.py`):**
-- `POST /export/html` — returns standalone HTML file as attachment
-- `POST /export/web-zip` — returns ZIP containing `{slug}/index.html`
-- `POST /preview/web` — returns HTML inline (no attachment header) for browser display
+#### Fix — Abstract-Phase Images No Longer Dropped
 
-**New file `pdf_gen/html_web_template.py`** — JATS Editor-style web viewer:
-- Left TOC sidebar (280px): auto-generated from sections, active section highlighting via `IntersectionObserver`
-- Right icon sidebar (44px): 5 vertical tab buttons
-- Slide-out panel (340px): Metrics, Media, Tables, References, Contributors panels
-- Affiliation index building for numbered superscripts on author names
-- All text passed through `_citify(_linkify())`
+**Problem:** The parser guard `if not is_skip and phase != "body": continue` dropped any non-skip image that appeared while the parser was still in the `abstract` phase (i.e. between the abstract text and the Keywords line, or in edge-case documents).
 
-**`ExportScreen.jsx`:**
-- Added `previewXml()` — opens syntax-highlighted XML in new tab (synchronous `window.open` to avoid popup blocker, then `document.write`)
-- Added `previewWeb()` — opens new tab synchronously, writes "Building…" placeholder, fetches HTML from backend as blob, navigates via `win.location.replace(blobUrl)` (avoids `document.write` breaking on large base64-embedded images)
-- Added `downloadHtml()`, `downloadWebZip()` functions
-- Added 6 buttons to header: View XML, Download XML, View Web, Download HTML, Download Web ZIP, Download PDF
+**Fix (`parser/docx_parser.py`):** Changed condition to `phase in ("pre_title", "authors")` so only truly decorative pre-content images (author headshots, cover art appearing before the title or in the author block) are dropped. Images in the abstract or body phase are always captured.
 
-**`vite.config.js`:** Added `/preview` proxy rule.
+**Verified:** On the BAHAJ file (`Template+EPA+-+BAHAJ+Imane+.docx`), the inline image at paragraph 14 (after Keywords) is correctly extracted with its full base64 `data_uri` and placed in the first body section for rendering.
 
----
+#### Fix — Production Build Failure (Smart Quotes)
 
-#### Bug Fix — Heading Detection for Bold-Style Documents
+**Problem:** Render's production build (Vite + Rolldown) failed with:
+```
+Expected `,` or `)` but found `Identifier`
+src/screens/UploadScreen.jsx:51
+```
 
-**Symptom:** A new uploaded document placed all content in "Other" — no sections detected.
+**Root cause:** The warning string used Unicode curly/smart quotes (`"References"`) which Rolldown treated as ASCII `"` delimiters, terminating the string literal early.
 
-**Root cause:** The document used **bold 12pt Normal paragraphs** as headings instead of numbered headings or Word Heading styles. `_classify_heading()` only detected those two patterns.
+**Fix (`UploadScreen.jsx`):** Replaced Unicode smart quotes with escaped ASCII quotes (`\"References\"`).
 
-**Fix (`parser/docx_parser.py`):**
-- Added `is_bold: bool = False` parameter to `_classify_heading()`
-- Added third detection path: if a paragraph is bold, 2–80 chars, starts uppercase, doesn't end with sentence-terminating punctuation, and isn't a figure caption → classify as heading
-- Uses `_guess_section_type()` to distinguish h2 (Introduction, Methods, Results…) from h3 (SEM Analysis, Characterization, etc.)
-- Updated call site in `_extract_structure()` to pass `is_bold=is_bold`
-
----
-
-#### Bug Fix — Abstract Skipped When Graphical Abstract Present
-
-**Symptom:** After the bold heading fix, documents with a "Graphical Abstract" section before the real abstract lost their abstract content.
-
-**Root cause:** "Graphical Abstract" (short, bold) now triggered the bold heuristic → `heading_level="h3"` → the `authors` phase exited early to `body`, never reaching the real "Abstract" heading.
-
-**Fix:** Added `heading_explicit = _classify_heading(text, style_name)` (no bold heuristic) alongside `heading_level`. Phase transitions in `pre_title` and `authors` now use `heading_explicit` (strict detection only). The `abstract` phase and body section handling continue using the full `heading_level` (with bold heuristic) so real section headings still work after the abstract.
-
----
-
-#### Bug Fix — Author Last Name from Trailing Initials
-
-**Old behaviour:** "Ravi K N" → `first_name="Ravi K N"`, `last_name=""`
-
-**New behaviour (South Indian / abbreviated suffix names):**
-
-| Input | first_name | last_name |
-|---|---|---|
-| `Shankar S` | `Shankar` | `S` |
-| `Ravi K N` | `Ravi` | `K N` |
-| `Manju Kumar S N` | `Manju Kumar` | `S N` |
-| `Mylarappa M` | `Mylarappa` | `M` |
-| `S.K RaviKumar` | `S.K` | `RaviKumar` |
-
-**Fix (`_split_name()` in `parser/docx_parser.py`):** Walks backwards through name tokens collecting consecutive single-letter initials (with optional trailing dot) into `last_name`. Non-initial last token still becomes `last_name` normally (covers Western names and "S.K RaviKumar" style).
-
----
-
-#### Deployment — Render (Docker)
-
-**New files:**
-- `backend/Dockerfile` — `python:3.11-slim` base, installs WeasyPrint system libs and LibreOffice, runs `gunicorn` with 1 worker / 4 threads / 120s timeout
-- `backend/.dockerignore`
-- `render.yaml` — Blueprint config: backend as Docker web service, frontend as static site
-- `frontend/src/utils/api.js` — exports `API_BASE = import.meta.env.VITE_API_BASE || ""`. Empty in dev (Vite proxy handles routing); set to deployed backend URL in production.
-
-**Modified for production API routing:**
-- `UploadScreen.jsx` — `/parse` → `` `${API_BASE}/parse` ``
-- `SectionsScreen.jsx` — `/autotag` → `` `${API_BASE}/autotag` ``
-- `ExportScreen.jsx` — all 6 fetch calls updated
-- `requirements.txt` — added `gunicorn>=21.2.0`
-
-**GitHub repo:** https://github.com/ruksarsb25-rgb/noveltor.git
-
----
-
----
-
-### 2026-05-18 (Session 2) — Parser & Export Fixes
-
-#### Fix 1 — Citation Range Expansion
-`_citify()` in both templates now expands ranges like `[17–24]` → `[17,18,19,20,21,22,23,24]` with individual anchor links per number.
-
-#### Fix 2 — Bold Headings Without Section Number Ignored
-Removed the bold heuristic from `_classify_heading()` entirely. Only explicitly numbered headings or Word Heading styles are now recognised as section headings, preventing decorative bold lines from corrupting the section list.
-
-#### Fix 3 — Corresponding Author `*` Prefix Format
-`_CORRESP_LINE_RE` updated to accept `*Corresponding author:` (leading asterisk) in addition to the plain `Corresponding author:` format.
-
-#### Fix 4 — Author Superscript Comma Strip
-`_AUTHOR_MARKER_RE` now allows a comma before `*` (e.g. `Ravikumar5,*`). The comma and asterisk are stripped when building the numeric affiliation key.
-
-#### Fix 5 — Expanded Figure / Table Caption Patterns
-Updated `_FIG_CAPTION_RE` and `_TABLE_CAPTION_RE` to match all common abbreviation variants:
-`Fig. n`, `Fig.n`, `Fig n`, `Figure. n`, `Figure-n`, `Fig-1`, `Fig. (n)`, `Fig.(n)`, `Fig (n)`, `Figure. (n)`, `Figure-(n)`, `Fig-(1)` — and equivalents for Table.
-
-#### Fix 6 — Graphical Abstract / Schema Images No Longer Skipped
-`_SKIP_FIG_RE` matched "schema" but not "scheme" — fixed to `sch(?:ema|eme)`. Images matching the pattern now render as **unnumbered figure blocks** with their original label (e.g. "Graphical Abstract", "Scheme-1") instead of being dropped.
-
-#### Fix 7 — Double Figure Captions Removed
-Template was prepending "Figure N." while the caption text still contained "Fig.N:" prefix. Added `_strip_fig_label()` to strip the `Fig. N:` / `Figure (12).` prefix from caption text before rendering. Result: only the template-generated label appears.
-
-#### Fix 8 — Graphical Abstract Missing (Phase Guard)
-The image detection block had `if phase == "body"` — Graphical Abstract images appear in the pre-body phase and were silently dropped. Fixed: image detection now runs for all phases; non-skip images in pre-body are still ignored, but skip images (Graphical Abstract, Scheme) are included.
-
-#### Fix 9 — Period-Separated Author Name Format
-`_split_name()` now handles `S.N.Manjula` style: if a single space-token matches `(X\.)+Word` (single-letter initials + multi-char surname), it splits at the last period segment.
-
-| Input | first_name | last_name |
-|---|---|---|
-| `S.N.Manjula` | `S.N.` | `Manjula` |
-| `K.Ravikumar` | `K.` | `Ravikumar` |
-
-#### Fix 10 — Smart Crop Over-Trimming Chart Borders
-`_smart_crop()` was cutting the top edge off charts that have a thick outer border frame (e.g. Fig. 5). The outer border top line was being removed, making the inset sub-chart appear to float above it. Fixed with a `min_blank_run=30` guard: a side is only cropped if there are ≥30 px of blank canvas on that edge — preventing fringe/rounding losses while still removing large blank EMF canvas areas.
-
-#### Fix 11 — DOI Added to PDF Export
-The article's DOI (entered in the Metadata screen) was present in the web preview but missing from the PDF output. Added DOI rendering to `html_template.py` below the dates row as a clickable `https://doi.org/…` link.
-
-#### Fix 12 — Trailing Periods Stripped from URLs in References
-`_linkify()` in both templates now strips trailing `.,;` from matched URLs before building the `href`, and re-appends the stripped punctuation as plain text after the link.
-
-#### Fix 13 — Trailing Periods Stripped from Reference Lines
-All reference `raw_text` values are now `.rstrip(".")` before rendering in both templates, removing the sentence-ending period that academic reference formatters typically append.
+**Commit:** `e62b596`
 
 ---
 
@@ -479,7 +427,8 @@ All reference `raw_text` values are now `.rstrip(".")` before rendering in both 
 
 - [ ] OJS integration (explicitly out of scope for now)
 - [ ] DOCX parsing is heuristic — complex author blocks or non-standard formatting may need manual correction
+- [ ] Figures are detected structurally but image binaries are not extracted (only captions + placeholders)
 - [ ] No user authentication — single-user local tool
 - [ ] AI auto-tag requires API key; gracefully degrades (button shows server error toast)
+- [ ] PDF export uses client-side html2pdf.js — complex layouts may need tuning
 - [ ] ISSN online field left blank by default per NFP workflow
-- [ ] Free-tier Render backend spins down after inactivity — first request after idle takes ~30s to wake
