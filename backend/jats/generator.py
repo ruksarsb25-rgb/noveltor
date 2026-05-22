@@ -158,31 +158,73 @@ def _build_body(body: Element, sections: list):
 
 
 def _append_content_blocks(parent: Element, sec: dict):
-    """Write paragraphs (and skip tables) from either content-array or legacy body string."""
+    """Write paragraphs, figures, and tables from either content-array or legacy body string."""
     content = sec.get("content")
     if content:
         for block in content:
-            if block.get("type") == "paragraph":
+            btype = block.get("type")
+            if btype == "paragraph":
                 text = (block.get("text") or "").strip()
                 if text:
                     _text(SubElement(parent, "p"), text)
-            # Tables are represented inline in JATS via <table-wrap>; skipped here for now
+            elif btype == "figure":
+                _inline_fig(parent, block)
+            elif btype == "table":
+                _inline_table(parent, block)
     elif sec.get("body"):
         for para_text in _split_paragraphs(sec["body"]):
             _text(SubElement(parent, "p"), para_text)
 
 
-def _build_back(back: Element, data: dict):
-    refs = data.get("references", [])
-    figs = data.get("figures", [])
+def _inline_fig(parent: Element, block: dict):
+    """Emit a JATS <fig> element inline in the body section."""
+    fig_id  = block.get("id") or "fig"
+    label   = block.get("label", "Figure")
+    caption = block.get("caption", "")
+    # Prefer the embedded base64 data URI; fall back to the filename href
+    href    = block.get("data_uri") or block.get("href", "")
 
-    if figs:
-        for fig in figs:
-            fig_el = SubElement(back, "fig", {"id": fig.get("id", "fig1")})
-            _text(SubElement(fig_el, "label"), fig.get("label", "Figure"))
-            cap = SubElement(fig_el, "caption")
-            _text(SubElement(cap, "p"), fig.get("caption", ""))
-            SubElement(fig_el, "graphic", {"xlink:href": fig.get("href", "figure.png")})
+    fig_el = SubElement(parent, "fig", {"id": fig_id})
+    _text(SubElement(fig_el, "label"), label)
+    if caption:
+        cap = SubElement(fig_el, "caption")
+        _text(SubElement(cap, "p"), caption)
+    if href:
+        SubElement(fig_el, "graphic", {"xlink:href": href})
+
+
+def _inline_table(parent: Element, block: dict):
+    """Emit a JATS <table-wrap> element inline in the body section."""
+    label   = block.get("label", "")
+    caption = block.get("caption", label)
+    headers = block.get("headers", [])
+    rows    = block.get("rows", [])
+
+    tw = SubElement(parent, "table-wrap")
+    if label:
+        _text(SubElement(tw, "label"), label)
+    if caption and caption != label:
+        cap = SubElement(tw, "caption")
+        _text(SubElement(cap, "p"), caption)
+    if headers or rows:
+        tbl = SubElement(tw, "table")
+        if headers:
+            thead = SubElement(tbl, "thead")
+            tr = SubElement(thead, "tr")
+            for h in headers:
+                _text(SubElement(tr, "th"), h or "")
+        if rows:
+            tbody = SubElement(tbl, "tbody")
+            for row in rows:
+                tr = SubElement(tbody, "tr")
+                for cell in row:
+                    _text(SubElement(tr, "td"), cell or "")
+
+
+def _build_back(back: Element, data: dict):
+    # Figures are now placed inline in body sections via _inline_fig().
+    # The <back> section only holds the reference list.
+    refs = data.get("references", [])
 
     if refs:
         rl = SubElement(back, "ref-list")
