@@ -48,7 +48,7 @@ export default function UploadScreen({ onParsed }) {
         setWarnMsg(
           "⚠️ No References section was found in this document. " +
           "Make sure your document contains a heading that reads " +
-          ""References", "References:", "References;" or similar."
+          "\"References\", \"References:\", \"References;\" or similar."
         );
       } else {
         setWarnMsg("");
