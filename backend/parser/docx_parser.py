@@ -330,9 +330,11 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                             break
                         lookahead += 1
 
-            # Pre-body images that are not skip images (Graphical Abstract etc.)
-            # are ignored — only skip images are included from any phase
-            if not is_skip and phase != "body":
+            # Images in pre_title / authors phases are decorative (cover photos,
+            # author headshots) — drop them unless they are skip images.
+            # Abstract-phase images (e.g. graphical abstracts after Keywords) ARE
+            # included so they appear in the document body.
+            if not is_skip and phase in ("pre_title", "authors"):
                 if text:
                     last_nonempty_text = text
                 continue
