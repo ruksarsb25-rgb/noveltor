@@ -359,13 +359,13 @@ def _inline_table(parent: Element, block: dict):
             thead = SubElement(tbl, "thead")
             tr = SubElement(thead, "tr")
             for h in headers:
-                _text(SubElement(tr, "th"), h or "")
+                _mixed(SubElement(tr, "th"), h or "")
         if rows:
             tbody = SubElement(tbl, "tbody")
             for row in rows:
                 tr = SubElement(tbody, "tr")
                 for cell in row:
-                    _text(SubElement(tr, "td"), cell or "")
+                    _mixed(SubElement(tr, "td"), cell or "")
 
 
 # ---------------------------------------------------------------------------
