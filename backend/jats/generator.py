@@ -2,7 +2,7 @@
 JATS XML generator — NISO Z39.96, Publishing DTD v1.3.
 Structure matched to the Data.xml reference used by the NFP website renderer.
 """
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring, fromstring
 from xml.dom import minidom
 import re
 
@@ -112,7 +112,7 @@ def _build_article_meta(front: Element, data: dict):
 
     # Title
     tg = SubElement(am, "title-group")
-    _text(SubElement(tg, "article-title"), data.get("title", "Untitled"))
+    _mixed(SubElement(tg, "article-title"), data.get("title", "Untitled"))
 
     # Authors + affiliations
     authors = data.get("authors") or []
@@ -191,7 +191,7 @@ def _build_article_meta(front: Element, data: dict):
     # Abstract
     if data.get("abstract"):
         abstract = SubElement(am, "abstract")
-        _text(SubElement(abstract, "p"), data["abstract"])
+        _mixed(SubElement(abstract, "p"), data["abstract"])
 
     # Keywords
     if data.get("keywords"):
@@ -284,14 +284,14 @@ def _build_body(body: Element, data: dict):
             sec.set("sec-type", sec_type.lower())
 
         if section.get("heading"):
-            _text(SubElement(sec, "title"), section["heading"])
+            _mixed(SubElement(sec, "title"), section["heading"])
 
         _append_content_blocks(sec, section, data, fig_counter)
 
         for sub in section.get("subsections", []):
             subsec = SubElement(sec, "sec")
             if sub.get("heading"):
-                _text(SubElement(subsec, "title"), sub["heading"])
+                _mixed(SubElement(subsec, "title"), sub["heading"])
             _append_content_blocks(subsec, sub, data, fig_counter)
 
 
@@ -304,7 +304,7 @@ def _append_content_blocks(parent: Element, sec: dict, data: dict, fig_counter: 
             if btype == "paragraph":
                 text = (block.get("text") or "").strip()
                 if text:
-                    _text(SubElement(parent, "p"), text)
+                    _mixed(SubElement(parent, "p"), text)
             elif btype == "figure":
                 fig_counter[0] += 1
                 _inline_fig(parent, block, data, fig_counter[0])
@@ -312,7 +312,7 @@ def _append_content_blocks(parent: Element, sec: dict, data: dict, fig_counter: 
                 _inline_table(parent, block)
     elif sec.get("body"):
         for para_text in _split_paragraphs(sec["body"]):
-            _text(SubElement(parent, "p"), para_text)
+            _mixed(SubElement(parent, "p"), para_text)
 
 
 def _inline_fig(parent: Element, block: dict, data: dict, n: int):
@@ -329,10 +329,10 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
     fname   = fig_filename(data, n)
 
     fig_el = SubElement(parent, "fig", {"id": f"figure-{n}"})
-    _text(SubElement(fig_el, "label"), label)
+    _mixed(SubElement(fig_el, "label"), label)
     if caption:
         cap = SubElement(fig_el, "caption")
-        _text(SubElement(cap, "p"), caption)
+        _mixed(SubElement(cap, "p"), caption)
     SubElement(fig_el, "graphic", {
         "href":         fname,
         "mimetype":     "image",
@@ -349,10 +349,10 @@ def _inline_table(parent: Element, block: dict):
 
     tw = SubElement(parent, "table-wrap")
     if label:
-        _text(SubElement(tw, "label"), label)
+        _mixed(SubElement(tw, "label"), label)
     if caption and caption != label:
         cap = SubElement(tw, "caption")
-        _text(SubElement(cap, "p"), caption)
+        _mixed(SubElement(cap, "p"), caption)
     if headers or rows:
         tbl = SubElement(tw, "table")
         if headers:
@@ -390,7 +390,7 @@ def _build_back(back: Element, data: dict):
         # Use BIBR-N id format to match Data.xml
         ref_el = SubElement(rl, "ref", {"id": f"BIBR-{i}"})
         mc = SubElement(ref_el, "mixed-citation", {"publication-type": "article-journal"})
-        mc.text = ref_text
+        _mixed(mc, ref_text)
         if doi:
             _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), doi)
 
@@ -417,6 +417,57 @@ def _split_paragraphs(text: str) -> list:
 
 def _text(el: Element, value: str) -> Element:
     el.text = str(value) if value else ""
+    return el
+
+
+# Citation marker pattern: [1], [1,2], [1, 2, 3], [1-3], [1–5]
+_CITE_RE = re.compile(r'\[(\d[\d,;\s–—\-]*\d|\d)\]')
+
+
+def _mixed(el: Element, text: str) -> Element:
+    """
+    Set element content as proper JATS XML mixed content:
+      - <sub>…</sub> / <sup>…</sup> HTML tags from the parser
+        → real XML <sub>/<sup> child elements
+      - [N] / [N,M] / [N-M] citation markers
+        → <xref ref-type="bibr" rid="BIBR-N"><sup>N</sup></xref>
+
+    Falls back to plain text if the XML fragment cannot be parsed.
+    """
+    if not text:
+        el.text = ""
+        return el
+
+    # 1. Convert [N] / [N,M] citation markers to xref XML markup
+    def _cite_to_xref(m):
+        nums = re.findall(r'\d+', m.group(1))
+        # Handle ranges like [1-3] → expand to 1,2,3
+        raw = m.group(1)
+        if re.search(r'[\-–—]', raw) and len(nums) == 2:
+            try:
+                nums = [str(n) for n in range(int(nums[0]), int(nums[1]) + 1)]
+            except ValueError:
+                pass
+        return ''.join(
+            f'<xref ref-type="bibr" rid="BIBR-{n}"><sup>{n}</sup></xref>'
+            for n in nums
+        )
+
+    marked = _CITE_RE.sub(_cite_to_xref, text)
+
+    # 2. Ensure any bare & not already an entity is escaped for XML parsing
+    safe = re.sub(r'&(?!(?:amp|lt|gt|quot|apos);)', '&amp;', marked)
+
+    # 3. Parse as an XML fragment and copy children into el
+    try:
+        frag = fromstring(f'<r>{safe}</r>')
+        el.text = frag.text
+        for child in frag:
+            el.append(child)
+    except Exception:
+        # Fallback: strip all markup and store as plain text
+        el.text = re.sub(r'<[^>]+>', '', text)
+
     return el
 
 
