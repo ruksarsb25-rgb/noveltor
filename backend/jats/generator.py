@@ -69,6 +69,14 @@ def fig_filename(data: dict, fig_num: int) -> str:
     return f"{journal}-{vol}-{issue}-g{fig_num}.jpeg"
 
 
+def eq_filename(data: dict, eq_num: int) -> str:
+    """Return the canonical filename for equation image N, e.g. 'Novel_Energy-1-1-e1.png'."""
+    journal = re.sub(r"[^\w]", "_", data.get("journal_name", "NFP")).strip("_")
+    vol     = str(data.get("volume") or "1")
+    issue   = str(data.get("issue")  or "1")
+    return f"{journal}-{vol}-{issue}-e{eq_num}.png"
+
+
 # ---------------------------------------------------------------------------
 # journal-meta
 # ---------------------------------------------------------------------------
@@ -273,9 +281,9 @@ def _build_contribs(am: Element, authors: list):
 # ---------------------------------------------------------------------------
 
 def _build_body(body: Element, data: dict):
-    sections   = data.get("sections", [])
-    # Track a running fig counter so filenames are globally consistent
-    fig_counter = [0]
+    sections    = data.get("sections", [])
+    fig_counter = [0]   # globally consistent figure numbering
+    eq_counter  = [0]   # globally consistent equation numbering
 
     for section in sections:
         sec = SubElement(body, "sec")
@@ -286,17 +294,18 @@ def _build_body(body: Element, data: dict):
         if section.get("heading"):
             _mixed(SubElement(sec, "title"), section["heading"])
 
-        _append_content_blocks(sec, section, data, fig_counter)
+        _append_content_blocks(sec, section, data, fig_counter, eq_counter)
 
         for sub in section.get("subsections", []):
             subsec = SubElement(sec, "sec")
             if sub.get("heading"):
                 _mixed(SubElement(subsec, "title"), sub["heading"])
-            _append_content_blocks(subsec, sub, data, fig_counter)
+            _append_content_blocks(subsec, sub, data, fig_counter, eq_counter)
 
 
-def _append_content_blocks(parent: Element, sec: dict, data: dict, fig_counter: list):
-    """Write paragraphs, figures, and tables from content-array or legacy body string."""
+def _append_content_blocks(parent: Element, sec: dict, data: dict,
+                           fig_counter: list, eq_counter: list):
+    """Write paragraphs, figures, equations, and tables from content-array or legacy body string."""
     content = sec.get("content")
     if content:
         for block in content:
@@ -308,6 +317,9 @@ def _append_content_blocks(parent: Element, sec: dict, data: dict, fig_counter: 
             elif btype == "figure":
                 fig_counter[0] += 1
                 _inline_fig(parent, block, data, fig_counter[0])
+            elif btype == "equation":
+                eq_counter[0] += 1
+                _inline_eq(parent, block, data, eq_counter[0])
             elif btype == "table":
                 _inline_table(parent, block)
     elif sec.get("body"):
@@ -337,6 +349,20 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
         "href":         fname,
         "mimetype":     "image",
         "mime-subtype": "jpeg",
+    })
+
+
+def _inline_eq(parent: Element, block: dict, data: dict, n: int):
+    """
+    Emit a JATS <disp-formula> for a display equation.
+    The image file is named using eq_filename() and exported in the XML ZIP.
+    """
+    fname = eq_filename(data, n)
+    eq_el = SubElement(parent, "disp-formula", {"id": f"E{n}"})
+    SubElement(eq_el, "graphic", {
+        "href":         fname,
+        "mimetype":     "image",
+        "mime-subtype": "png",
     })
 
 

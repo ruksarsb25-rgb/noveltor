@@ -193,25 +193,40 @@ def export_xml_zip():
 
         buf = _io.BytesIO()
         fig_counter = 0
+        eq_counter  = 0
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("article.xml", xml_str.encode("utf-8"))
 
-            # Walk sections content to extract images in document order
+            # Walk sections content in document order — extract figures and equations
             for sec in data.get("sections", []):
-                for content_list in [sec.get("content", []),
-                                     *[s.get("content", []) for s in sec.get("subsections", [])]]:
+                all_content = [sec.get("content", [])] + \
+                              [s.get("content", []) for s in sec.get("subsections", [])]
+                for content_list in all_content:
                     for block in content_list:
-                        if block.get("type") == "figure" and block.get("data_uri"):
+                        btype = block.get("type")
+                        uri   = block.get("data_uri", "")
+                        if not uri:
+                            if btype in ("figure", "equation"):
+                                if btype == "figure":  fig_counter += 1
+                                else:                  eq_counter  += 1
+                            continue
+
+                        b64 = uri.split(",", 1)[-1] if "," in uri else uri
+                        try:
+                            img_bytes = base64.b64decode(b64)
+                        except Exception:
+                            img_bytes = None
+
+                        if btype == "figure":
                             fig_counter += 1
-                            fname  = fig_filename(data, fig_counter)
-                            uri    = block["data_uri"]
-                            # Strip data URI header → raw base64
-                            b64    = uri.split(",", 1)[-1] if "," in uri else uri
-                            try:
-                                img_bytes = base64.b64decode(b64)
+                            fname = fig_filename(data, fig_counter)
+                            if img_bytes:
                                 zf.writestr(fname, img_bytes)
-                            except Exception:
-                                pass  # skip corrupt image
+                        elif btype == "equation":
+                            eq_counter += 1
+                            fname = eq_filename(data, eq_counter)
+                            if img_bytes:
+                                zf.writestr(fname, img_bytes)
 
         buf.seek(0)
         resp = make_response(buf.read())
