@@ -186,7 +186,7 @@ def export_xml_zip():
     if not data:
         return jsonify({"error": "No JSON body provided"}), 400
     try:
-        from jats.generator import generate_jats, fig_filename
+        from jats.generator import generate_jats, fig_filename, eq_filename
 
         xml_str = generate_jats(data)
         slug    = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
