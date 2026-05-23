@@ -1,6 +1,6 @@
 """
 JATS XML generator — NISO Z39.96, Publishing DTD v1.3.
-Accepts structured article data dict and returns a valid JATS XML string.
+Structure matched to the Data.xml reference used by the NFP website renderer.
 """
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
@@ -8,101 +8,156 @@ import re
 
 
 ARTICLE_TYPE_MAP = {
-    "Research Article": "research-article",
-    "Review": "review-article",
-    "Conference Proceeding": "proceedings-paper",
+    "Research Article":        "research-article",
+    "Review":                  "review-article",
+    "Conference Proceeding":   "proceedings-paper",
     "Enhanced Poster Article": "poster",
-    "Conference Report": "conference-report",
+    "Conference Report":       "conference-report",
 }
 
 
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
 def generate_jats(data: dict) -> str:
-    article_type = ARTICLE_TYPE_MAP.get(data.get("article_type", "Conference Proceeding"), "proceedings-paper")
+    article_type = ARTICLE_TYPE_MAP.get(
+        data.get("article_type", "Research Article"), "research-article"
+    )
 
     root = Element("article")
-    root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
-    root.set("xmlns:mml", "http://www.w3.org/1998/Math/MathML")
-    root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
-    root.set("article-type", article_type)
     root.set("xml:lang", "en")
-    root.set("dtd-version", "1.3")
+    root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
+    root.set("xmlns:ali",   "http://www.niso.org/schemas/ali/1.0/")
+    root.set("xmlns:mml",   "http://www.w3.org/1998/Math/MathML")
+    root.set("article-type", article_type)
+    root.set("dtd-version",  "1.3")
 
     front = SubElement(root, "front")
     _build_journal_meta(front, data)
     _build_article_meta(front, data)
 
     body = SubElement(root, "body")
-    _build_body(body, data.get("sections", []))
+    _build_body(body, data)
 
     back = SubElement(root, "back")
     _build_back(back, data)
 
-    raw = tostring(root, encoding="unicode", xml_declaration=False)
+    raw    = tostring(root, encoding="unicode", xml_declaration=False)
     pretty = _prettify(raw)
 
-    return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.3 20210610//EN" "https://jats.nlm.nih.gov/publishing/1.3/JATS-journalpublishing1-3.dtd">\n' + pretty
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.3 20210610//EN"'
+        ' "https://jats.nlm.nih.gov/publishing/1.3/JATS-journalpublishing1-3.dtd">\n'
+        + pretty
+    )
 
+
+# ---------------------------------------------------------------------------
+# Figure filename helper (used by both XML generator and ZIP exporter)
+# ---------------------------------------------------------------------------
+
+def fig_filename(data: dict, fig_num: int) -> str:
+    """
+    Return the canonical filename for figure N, e.g. 'Novel_Energy-1-1-g3.jpeg'.
+    Pattern mirrors Data.xml: {journal_slug}-{vol}-{issue}-g{N}.jpeg
+    """
+    journal  = re.sub(r"[^\w]", "_", data.get("journal_name", "NFP")).strip("_")
+    vol      = str(data.get("volume")  or "1")
+    issue    = str(data.get("issue")   or "1")
+    return f"{journal}-{vol}-{issue}-g{fig_num}.jpeg"
+
+
+# ---------------------------------------------------------------------------
+# journal-meta
+# ---------------------------------------------------------------------------
 
 def _build_journal_meta(front: Element, data: dict):
     jm = SubElement(front, "journal-meta")
-    _text(SubElement(jm, "journal-id", {"journal-id-type": "publisher-id"}), data.get("journal_id", "nfp"))
+
+    jid = data.get("journal_name", "Novel Future Proceedings")
+    _text(SubElement(jm, "journal-id", {"journal-id-type": "issn"}),
+          data.get("issn_online") or data.get("issn_print") or "")
 
     jt = SubElement(jm, "journal-title-group")
-    _text(SubElement(jt, "journal-title"), data.get("journal_name", "Novel Future Proceedings"))
+    _text(SubElement(jt, "journal-title"), jid)
+    _text(SubElement(jt, "abbrev-journal-title"), jid)   # mirrors Data.xml
 
-    if data.get("issn_print"):
-        _text(SubElement(jm, "issn", {"pub-type": "ppub"}), data["issn_print"])
     if data.get("issn_online"):
         _text(SubElement(jm, "issn", {"pub-type": "epub"}), data["issn_online"])
+    if data.get("issn_print"):
+        _text(SubElement(jm, "issn", {"pub-type": "ppub"}), data["issn_print"])
 
     pub = SubElement(jm, "publisher")
     _text(SubElement(pub, "publisher-name"), data.get("publisher_name", "Novel Future Publishers Inc."))
-    _text(SubElement(pub, "publisher-loc"), data.get("publisher_loc", "Canada"))
+    _text(SubElement(pub, "publisher-loc"),  data.get("publisher_loc", "Canada"))
 
+
+# ---------------------------------------------------------------------------
+# article-meta
+# ---------------------------------------------------------------------------
 
 def _build_article_meta(front: Element, data: dict):
     am = SubElement(front, "article-meta")
 
+    # DOI
     if data.get("doi"):
-        ids = SubElement(am, "article-id", {"pub-id-type": "doi"})
-        ids.text = data["doi"]
+        _text(SubElement(am, "article-id", {"pub-id-type": "doi"}), data["doi"])
 
-    # Article categories
+    # Categories
     cats = SubElement(am, "article-categories")
-    subj = SubElement(cats, "subj-group", {"subj-group-type": "heading"})
-    _text(SubElement(subj, "subject"), data.get("article_type", "Conference Proceeding"))
+    sg   = SubElement(cats, "subj-group")
+    _text(SubElement(sg, "subject"), data.get("article_type", "Research Article"))
 
     # Title
     tg = SubElement(am, "title-group")
     _text(SubElement(tg, "article-title"), data.get("title", "Untitled"))
 
-    # Authors
-    if data.get("authors"):
-        cg = SubElement(am, "contrib-group")
-        for idx, author in enumerate(data["authors"]):
-            contrib = SubElement(cg, "contrib", {"contrib-type": "author"})
-            if author.get("corresponding"):
-                contrib.set("corresp", "yes")
-            name = SubElement(contrib, "name")
-            _text(SubElement(name, "surname"), author.get("last_name", ""))
-            _text(SubElement(name, "given-names"), author.get("first_name", ""))
-            if author.get("orcid"):
-                orcid = SubElement(contrib, "contrib-id", {"contrib-id-type": "orcid"})
-                orcid.text = author["orcid"]
-            if author.get("email"):
-                _text(SubElement(contrib, "email"), author["email"])
-            if author.get("affiliation"):
-                aff = SubElement(contrib, "aff")
-                aff.text = author["affiliation"]
+    # Authors + affiliations
+    authors = data.get("authors") or []
+    if authors:
+        _build_contribs(am, authors)
 
-    # Publication dates
-    if data.get("pub_date_year"):
-        pd = SubElement(am, "pub-date", {"pub-type": "epub"})
-        if data.get("pub_date_day"):
-            _text(SubElement(pd, "day"), str(data["pub_date_day"]))
-        if data.get("pub_date_month"):
-            _text(SubElement(pd, "month"), str(data["pub_date_month"]))
-        _text(SubElement(pd, "year"), str(data["pub_date_year"]))
+    # author-notes (corresponding authors)
+    corresp_authors = [a for a in authors if a.get("corresponding")]
+    if corresp_authors:
+        an = SubElement(am, "author-notes")
+        for i, a in enumerate(corresp_authors):
+            full = f"{a.get('first_name','')} {a.get('last_name','')}".strip()
+            aff  = a.get("affiliation", "")
+            email = a.get("email", "")
+            parts = ", ".join(filter(None, [full, aff, email]))
+            _text(SubElement(an, "corresp", {"id": f"cor-{i}"}),
+                  f"Corresponding author: {parts}")
+
+    # Pub dates – matches Data.xml: one "pub" + one "collection"
+    pub_year  = str(data.get("pub_date_year") or "")
+    pub_month = str(data.get("pub_date_month") or "")
+    pub_day   = str(data.get("pub_date_day")   or "")
+    rec_date  = data.get("published_date") or data.get("received_date") or ""
+
+    if pub_year:
+        iso = f"{pub_year}"
+        if pub_month: iso += f"-{pub_month}"
+        if pub_day:   iso += f"-{pub_day}"
+        pd = SubElement(am, "pub-date", {
+            "publication-format": "electronic",
+            "date-type": "pub",
+            "iso-8601-date": iso,
+        })
+        if pub_day:   _text(SubElement(pd, "day"),   pub_day)
+        if pub_month: _text(SubElement(pd, "month"), pub_month)
+        _text(SubElement(pd, "year"), pub_year)
+
+        # collection date = received/published (use same year if nothing else)
+        col_iso = rec_date or pub_year
+        col_pd  = SubElement(am, "pub-date", {
+            "publication-format": "electronic",
+            "date-type": "collection",
+            "iso-8601-date": col_iso,
+        })
+        _text(SubElement(col_pd, "year"), col_iso[:4] if len(col_iso) >= 4 else col_iso)
 
     if data.get("volume"):
         _text(SubElement(am, "volume"), str(data["volume"]))
@@ -117,14 +172,21 @@ def _build_article_meta(front: Element, data: dict):
         if data.get("accepted_date"):
             _date_element(hist, "accepted", data["accepted_date"])
 
-    # Permissions
+    # Permissions — matches Data.xml structure exactly
+    year_str = pub_year or "2026"
     perms = SubElement(am, "permissions")
     _text(SubElement(perms, "copyright-statement"), data.get("copyright_statement",
-        "© 2026 Novel Future Publishers Inc. Open Access article under CC BY 4.0 license."))
-    lic = SubElement(perms, "license", {"license-type": "open-access",
-                                         "xlink:href": "https://creativecommons.org/licenses/by/4.0/"})
-    lp = SubElement(lic, "license-p")
-    lp.text = "This article is distributed under the terms of the Creative Commons Attribution 4.0 International License."
+        f"© {year_str} The Author(s). Published by Novel Future Publishers Inc. "
+        "This article is licensed under CC BY 4.0."))
+    _text(SubElement(perms, "copyright-year"),   year_str)
+    _text(SubElement(perms, "copyright-holder"), f"© {year_str} by the Author(s)")
+    lic = SubElement(perms, "license", {
+        "license-type": "open-access",
+        "href": "https://creativecommons.org/licenses/by/4.0/",   # no xlink: prefix — matches Data.xml
+    })
+    _text(SubElement(lic, "license_ref"), "https://creativecommons.org/licenses/by/4.0/")
+    _text(SubElement(lic, "license-p"),
+          "This work is licensed under a Creative Commons Attribution 4.0 International License.")
 
     # Abstract
     if data.get("abstract"):
@@ -138,7 +200,83 @@ def _build_article_meta(front: Element, data: dict):
             _text(SubElement(kwg, "kwd"), kw)
 
 
-def _build_body(body: Element, sections: list):
+def _build_contribs(am: Element, authors: list):
+    """
+    Build contrib-group with xref→aff links, then aff elements at article-meta
+    level — matching Data.xml's structure exactly.
+    """
+    cg = SubElement(am, "contrib-group")
+
+    # Build a unique-affiliation index (same text → same AFF-N id)
+    aff_index: dict[str, int] = {}
+    aff_counter = [0]
+
+    def aff_id(text: str) -> str:
+        if text not in aff_index:
+            aff_counter[0] += 1
+            aff_index[text] = aff_counter[0]
+        return f"AFF-{aff_index[text]}"
+
+    corresp_idx: dict[int, int] = {}  # author index → cor-N id
+    corresp_counter = [0]
+
+    for author_i, author in enumerate(authors):
+        contrib = SubElement(cg, "contrib", {"contrib-type": "author"})
+
+        name = SubElement(contrib, "name")
+        _text(SubElement(name, "surname"),     author.get("last_name",  ""))
+        _text(SubElement(name, "given-names"), author.get("first_name", ""))
+
+        if author.get("orcid"):
+            _text(SubElement(contrib, "contrib-id", {"contrib-id-type": "orcid"}),
+                  author["orcid"])
+
+        # address (country + email) — mirrors Data.xml
+        addr = SubElement(contrib, "address")
+        if author.get("affiliation"):
+            # Try to extract country from affiliation string (last comma-separated part)
+            parts = [p.strip() for p in author["affiliation"].split(",")]
+            _text(SubElement(addr, "country"), parts[-1] if parts else "")
+        if author.get("email"):
+            _text(SubElement(addr, "email"), author["email"])
+
+        # xref → affiliation
+        if author.get("affiliation"):
+            aid = aff_id(author["affiliation"])
+            SubElement(contrib, "xref", {"rid": aid, "ref-type": "aff"})
+
+        # xref → corresp (for corresponding authors)
+        if author.get("corresponding"):
+            cor_n = corresp_counter[0]
+            corresp_idx[author_i] = cor_n
+            corresp_counter[0] += 1
+            SubElement(contrib, "xref", {"ref-type": "corresp", "rid": f"cor-{cor_n}"})
+
+    # Emit <aff> elements at article-meta level (after contrib-group)
+    # sorted by their AFF-N id
+    for aff_text, n in sorted(aff_index.items(), key=lambda x: x[1]):
+        aff_el = SubElement(am, "aff", {"id": f"AFF-{n}"})
+        # Try to parse "Department, Institution, City, Country"
+        parts = [p.strip() for p in aff_text.split(",")]
+        if len(parts) >= 2:
+            _text(SubElement(aff_el, "institution"), parts[0])
+            SubElement(aff_el, "institution-wrap")   # empty placeholder — mirrors Data.xml
+            if len(parts) >= 3:
+                _text(SubElement(aff_el, "addr-line"), ", ".join(parts[1:-1]))
+            _text(SubElement(aff_el, "country"), parts[-1])
+        else:
+            aff_el.text = aff_text   # fallback: plain text
+
+
+# ---------------------------------------------------------------------------
+# body
+# ---------------------------------------------------------------------------
+
+def _build_body(body: Element, data: dict):
+    sections   = data.get("sections", [])
+    # Track a running fig counter so filenames are globally consistent
+    fig_counter = [0]
+
     for section in sections:
         sec = SubElement(body, "sec")
         sec_type = section.get("type", "Other")
@@ -148,17 +286,17 @@ def _build_body(body: Element, sections: list):
         if section.get("heading"):
             _text(SubElement(sec, "title"), section["heading"])
 
-        _append_content_blocks(sec, section)
+        _append_content_blocks(sec, section, data, fig_counter)
 
         for sub in section.get("subsections", []):
             subsec = SubElement(sec, "sec")
             if sub.get("heading"):
                 _text(SubElement(subsec, "title"), sub["heading"])
-            _append_content_blocks(subsec, sub)
+            _append_content_blocks(subsec, sub, data, fig_counter)
 
 
-def _append_content_blocks(parent: Element, sec: dict):
-    """Write paragraphs, figures, and tables from either content-array or legacy body string."""
+def _append_content_blocks(parent: Element, sec: dict, data: dict, fig_counter: list):
+    """Write paragraphs, figures, and tables from content-array or legacy body string."""
     content = sec.get("content")
     if content:
         for block in content:
@@ -168,7 +306,8 @@ def _append_content_blocks(parent: Element, sec: dict):
                 if text:
                     _text(SubElement(parent, "p"), text)
             elif btype == "figure":
-                _inline_fig(parent, block)
+                fig_counter[0] += 1
+                _inline_fig(parent, block, data, fig_counter[0])
             elif btype == "table":
                 _inline_table(parent, block)
     elif sec.get("body"):
@@ -176,21 +315,29 @@ def _append_content_blocks(parent: Element, sec: dict):
             _text(SubElement(parent, "p"), para_text)
 
 
-def _inline_fig(parent: Element, block: dict):
-    """Emit a JATS <fig> element inline in the body section."""
-    fig_id  = block.get("id") or "fig"
-    label   = block.get("label", "Figure")
+def _inline_fig(parent: Element, block: dict, data: dict, n: int):
+    """
+    Emit a JATS <fig> element.
+    - id:      figure-N   (matches Data.xml pattern)
+    - graphic: href = canonical filename (e.g. Novel_Energy-1-1-g3.jpeg)
+               mimetype / mime-subtype attributes (no data URI in XML)
+    The actual image bytes live in block['data_uri'] and are exported
+    separately via the ZIP endpoint.
+    """
+    label   = block.get("label") or f"Figure {n}"
     caption = block.get("caption", "")
-    # Prefer the embedded base64 data URI; fall back to the filename href
-    href    = block.get("data_uri") or block.get("href", "")
+    fname   = fig_filename(data, n)
 
-    fig_el = SubElement(parent, "fig", {"id": fig_id})
+    fig_el = SubElement(parent, "fig", {"id": f"figure-{n}"})
     _text(SubElement(fig_el, "label"), label)
     if caption:
         cap = SubElement(fig_el, "caption")
         _text(SubElement(cap, "p"), caption)
-    if href:
-        SubElement(fig_el, "graphic", {"xlink:href": href})
+    SubElement(fig_el, "graphic", {
+        "href":         fname,
+        "mimetype":     "image",
+        "mime-subtype": "jpeg",
+    })
 
 
 def _inline_table(parent: Element, block: dict):
@@ -221,38 +368,44 @@ def _inline_table(parent: Element, block: dict):
                     _text(SubElement(tr, "td"), cell or "")
 
 
+# ---------------------------------------------------------------------------
+# back (references only — figures are inline in body)
+# ---------------------------------------------------------------------------
+
 def _build_back(back: Element, data: dict):
-    # Figures are now placed inline in body sections via _inline_fig().
-    # The <back> section only holds the reference list.
     refs = data.get("references", [])
+    if not refs:
+        return
 
-    if refs:
-        rl = SubElement(back, "ref-list")
-        _text(SubElement(rl, "title"), "References")
-        for i, ref in enumerate(refs, 1):
-            # Support both legacy string refs and new {number, raw_text, doi} dicts
-            if isinstance(ref, dict):
-                ref_id  = f"ref{ref.get('number', i)}"
-                ref_text = ref.get("raw_text", "")
-                doi     = ref.get("doi", "")
-            else:
-                ref_id, ref_text, doi = f"ref{i}", ref, ""
+    rl = SubElement(back, "ref-list")
+    _text(SubElement(rl, "title"), "References")
 
-            ref_el = SubElement(rl, "ref", {"id": ref_id})
-            mc = SubElement(ref_el, "mixed-citation")
-            mc.text = ref_text
-            if doi:
-                pub_id = SubElement(ref_el, "pub-id", {"pub-id-type": "doi"})
-                pub_id.text = doi
+    for i, ref in enumerate(refs, 1):
+        if isinstance(ref, dict):
+            ref_text = ref.get("raw_text", "")
+            doi      = ref.get("doi", "")
+        else:
+            ref_text, doi = ref, ""
 
+        # Use BIBR-N id format to match Data.xml
+        ref_el = SubElement(rl, "ref", {"id": f"BIBR-{i}"})
+        mc = SubElement(ref_el, "mixed-citation", {"publication-type": "article-journal"})
+        mc.text = ref_text
+        if doi:
+            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), doi)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _date_element(parent: Element, date_type: str, date_str: str):
-    el = SubElement(parent, "date", {"date-type": date_type})
+    el    = SubElement(parent, "date", {"date-type": date_type})
     parts = str(date_str).split("-")
     if len(parts) == 3:
-        _text(SubElement(el, "day"), parts[2])
+        _text(SubElement(el, "day"),   parts[2])
         _text(SubElement(el, "month"), parts[1])
-        _text(SubElement(el, "year"), parts[0])
+        _text(SubElement(el, "year"),  parts[0])
     else:
         _text(SubElement(el, "year"), str(date_str))
 
@@ -269,13 +422,10 @@ def _text(el: Element, value: str) -> Element:
 
 def _prettify(xml_str: str) -> str:
     try:
-        dom = minidom.parseString(f"<root>{xml_str}</root>")
+        dom   = minidom.parseString(f"<root>{xml_str}</root>")
         inner = dom.documentElement
-        result_lines = []
-        for child in inner.childNodes:
-            result_lines.append(child.toprettyxml(indent="  "))
-        pretty = "\n".join(result_lines)
-        # Remove extra blank lines minidom introduces
+        lines = [child.toprettyxml(indent="  ") for child in inner.childNodes]
+        pretty = "\n".join(lines)
         pretty = re.sub(r"\n\s*\n", "\n", pretty)
         return pretty
     except Exception:

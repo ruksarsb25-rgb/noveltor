@@ -171,6 +171,57 @@ def export_web_zip():
         return jsonify({"error": f"Web ZIP generation failed: {str(e)}"}), 500
 
 
+@app.route("/export/xml-zip", methods=["POST"])
+def export_xml_zip():
+    """
+    Return a ZIP package containing:
+      - article.xml  (JATS XML with filename-based graphic hrefs)
+      - figure images extracted from the parsed data_uri fields
+        (named using the same convention as the XML: Journal-vol-issue-gN.jpeg)
+
+    Upload both to the journal website so the XML graphic hrefs resolve.
+    """
+    import zipfile, io as _io, base64
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+    try:
+        from jats.generator import generate_jats, fig_filename
+
+        xml_str = generate_jats(data)
+        slug    = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
+
+        buf = _io.BytesIO()
+        fig_counter = 0
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("article.xml", xml_str.encode("utf-8"))
+
+            # Walk sections content to extract images in document order
+            for sec in data.get("sections", []):
+                for content_list in [sec.get("content", []),
+                                     *[s.get("content", []) for s in sec.get("subsections", [])]]:
+                    for block in content_list:
+                        if block.get("type") == "figure" and block.get("data_uri"):
+                            fig_counter += 1
+                            fname  = fig_filename(data, fig_counter)
+                            uri    = block["data_uri"]
+                            # Strip data URI header → raw base64
+                            b64    = uri.split(",", 1)[-1] if "," in uri else uri
+                            try:
+                                img_bytes = base64.b64decode(b64)
+                                zf.writestr(fname, img_bytes)
+                            except Exception:
+                                pass  # skip corrupt image
+
+        buf.seek(0)
+        resp = make_response(buf.read())
+        resp.headers["Content-Type"] = "application/zip"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_xml_package.zip"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"XML package generation failed: {str(e)}"}), 500
+
+
 @app.route("/export/html", methods=["POST"])
 def export_html():
     data = request.get_json(force=True)

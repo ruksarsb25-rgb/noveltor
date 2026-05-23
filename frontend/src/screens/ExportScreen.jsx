@@ -204,6 +204,7 @@ export default function ExportScreen({ article }) {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState(false);
   const [webLoading, setWebLoading] = useState(false);
+  const [xmlZipLoading, setXmlZipLoading] = useState(false);
   const [serverValidation, setServerValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [activeTab, setActiveTab] = useState("preview"); // preview | xml
@@ -257,6 +258,33 @@ export default function ExportScreen({ article }) {
     a.download = `${(article.title || "article").replace(/\s+/g, "_").slice(0, 60)}.xml`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadXmlZip = async () => {
+    setXmlZipLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/xml-zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "XML package generation failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "article").replace(/\s+/g, "_").slice(0, 60)}_xml_package.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("XML package downloaded");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setXmlZipLoading(false);
+    }
   };
 
   const downloadPdf = async () => {
@@ -408,6 +436,14 @@ export default function ExportScreen({ article }) {
           </Button>
           <Button variant="secondary" onClick={previewXml} disabled={!xml}>⎋ View XML</Button>
           <Button onClick={downloadXml} disabled={!xml}>⬇ Download XML</Button>
+          <Button onClick={downloadXmlZip} disabled={xmlZipLoading} className="flex items-center gap-2">
+            {xmlZipLoading ? (
+              <>
+                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                Building…
+              </>
+            ) : "⬇ XML Package"}
+          </Button>
           <Button variant="secondary" onClick={previewWeb}>⎋ View Web</Button>
           <Button onClick={downloadHtml} disabled={htmlLoading} className="flex items-center gap-2">
             {htmlLoading ? (
