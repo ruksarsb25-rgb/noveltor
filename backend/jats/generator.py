@@ -416,15 +416,14 @@ def _build_back(back: Element, data: dict):
         # Use BIBR-N id format to match Data.xml
         ref_el = SubElement(rl, "ref", {"id": f"BIBR-{i}"})
         mc = SubElement(ref_el, "mixed-citation", {"publication-type": "article-journal"})
-        _mixed(mc, ref_text)
+        # Strip any trailing DOI URL already present in Vancouver-formatted raw_text
+        # so the <pub-id> element is the single authoritative DOI representation.
+        display_text = re.sub(
+            r'\s*https?://doi\.org/\S+\s*$', '', ref_text, flags=re.IGNORECASE
+        ).strip()
+        _mixed(mc, display_text)
         if doi:
-            clean_doi = doi.strip()
-            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), clean_doi)
-            ext = SubElement(mc, "ext-link", {
-                "ext-link-type": "uri",
-                "href": f"https://doi.org/{clean_doi}",
-            })
-            _text(ext, f"https://doi.org/{clean_doi}")
+            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), doi.strip())
 
 
 # ---------------------------------------------------------------------------
