@@ -15,6 +15,7 @@ export default defineConfig({
       '/export': 'http://localhost:5001',
       '/preview': 'http://localhost:5001',
       '/enrich-refs': 'http://localhost:5001',
+      '/format-refs': 'http://localhost:5001',
     },
   },
 })

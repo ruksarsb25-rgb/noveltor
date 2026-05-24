@@ -201,6 +201,7 @@ export default function SectionsScreen({ article, onChange, onNext }) {
   const [autoTagging, setAutoTagging] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichMsg, setEnrichMsg] = useState("");
+  const [formatting, setFormatting] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -306,6 +307,35 @@ export default function SectionsScreen({ article, onChange, onNext }) {
     onChange({ ...article, references: [...references, { number: references.length + 1, raw_text: "", doi: "" }] });
   const removeReference = (i) =>
     onChange({ ...article, references: references.filter((_, idx) => idx !== i) });
+
+  const formatVancouver = async () => {
+    if (references.length === 0) return;
+    setFormatting(true);
+    setEnrichMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/format-refs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refs: references }),
+      });
+      let json;
+      try { json = await res.json(); } catch { json = {}; }
+      if (json.refs) {
+        onChange({ ...article, references: json.refs });
+        const n = json.formatted ?? 0;
+        setEnrichMsg(n > 0 ? `Formatted ${n} ref${n > 1 ? "s" : ""} as Vancouver.` : "No refs could be formatted.");
+        setTimeout(() => setEnrichMsg(""), 5000);
+      } else {
+        setEnrichMsg(`Error: ${json.error || `HTTP ${res.status}`}`);
+        setTimeout(() => setEnrichMsg(""), 6000);
+      }
+    } catch (err) {
+      setEnrichMsg(`Failed: ${err.message}`);
+      setTimeout(() => setEnrichMsg(""), 5000);
+    } finally {
+      setFormatting(false);
+    }
+  };
 
   const enrichDois = async () => {
     const missing = references.filter((r) => !refDoi(r));
@@ -467,14 +497,21 @@ export default function SectionsScreen({ article, onChange, onNext }) {
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-slate-800">References</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {enrichMsg && (
               <span className="text-xs text-slate-500">{enrichMsg}</span>
             )}
             <Button
               variant="secondary"
+              onClick={formatVancouver}
+              disabled={formatting || enriching || references.length === 0}
+            >
+              {formatting ? "Formatting…" : "📋 Vancouver"}
+            </Button>
+            <Button
+              variant="secondary"
               onClick={enrichDois}
-              disabled={enriching || references.length === 0}
+              disabled={enriching || formatting || references.length === 0}
             >
               {enriching ? "Looking up…" : "🔍 Enrich DOIs"}
             </Button>

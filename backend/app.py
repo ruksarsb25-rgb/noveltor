@@ -278,6 +278,139 @@ def export_pdf():
         return jsonify({"error": f"PDF generation failed: {str(e)}"}), 500
 
 
+def _crossref_item_to_vancouver(item: dict) -> str:
+    """
+    Format a Crossref work metadata dict as a Vancouver-style citation.
+    Pattern: Authors. Title. Journal. Year;Vol(Issue):Pages. doi:DOI
+    """
+    # ── Authors (max 6, then et al.) ────────────────────────────────────────
+    authors = item.get("author", [])
+    author_parts = []
+    for a in authors[:6]:
+        family  = a.get("family", "").strip()
+        given   = a.get("given",  "").strip()
+        initials = "".join(w[0].upper() for w in given.split() if w)
+        author_parts.append(f"{family} {initials}".strip() if family else "")
+    author_parts = [p for p in author_parts if p]
+    author_str = ", ".join(author_parts)
+    if len(authors) > 6:
+        author_str += " et al"
+
+    # ── Title ────────────────────────────────────────────────────────────────
+    titles = item.get("title", [])
+    title  = titles[0].strip() if titles else ""
+
+    # ── Journal (prefer abbreviated title) ───────────────────────────────────
+    short = item.get("short-container-title", [])
+    journal = (short[0] if short else
+               (item.get("container-title", [""])[0])).strip()
+
+    # ── Publication date ─────────────────────────────────────────────────────
+    for date_key in ("published", "published-print", "published-online"):
+        dp = item.get(date_key, {}).get("date-parts", [[""]])
+        if dp and dp[0] and dp[0][0]:
+            year = str(dp[0][0])
+            break
+    else:
+        year = ""
+
+    volume = item.get("volume", "")
+    issue  = item.get("issue",  "")
+    pages  = item.get("page",   "")
+    doi    = item.get("DOI",    "").strip()
+
+    # ── Assemble ─────────────────────────────────────────────────────────────
+    parts = []
+    if author_str:
+        parts.append(author_str + ".")
+    if title:
+        parts.append(title + ".")
+    if journal:
+        loc = year
+        if volume:
+            loc += f";{volume}"
+        if issue:
+            loc += f"({issue})"
+        if pages:
+            loc += f":{pages}"
+        parts.append(f"{journal}. {loc}.".strip())
+    if doi:
+        parts.append(f"doi:{doi}")
+
+    return " ".join(parts)
+
+
+@app.route("/format-refs", methods=["POST"])
+def format_refs():
+    """
+    Reformat all references into Vancouver citation style using Crossref
+    metadata. For refs with a DOI, metadata is fetched directly. For refs
+    without a DOI, a bibliographic search is attempted first.
+    Returns the same refs list with raw_text set to the Vancouver string
+    and doi filled in where found.
+    """
+    import requests as _req
+    import time
+
+    data = request.get_json(force=True)
+    if not data or "refs" not in data:
+        return jsonify({"error": "Expected JSON body with 'refs' key"}), 400
+
+    refs    = data["refs"]
+    enriched = []
+    formatted = 0
+
+    for ref in refs:
+        raw_text = ref.get("raw_text", "").strip()
+        doi      = ref.get("doi", "").strip()
+        item     = None
+
+        try:
+            if doi:
+                # Fetch metadata directly by DOI
+                r = _req.get(
+                    f"https://api.crossref.org/works/{doi}",
+                    timeout=6,
+                    headers={"User-Agent": "NovelTOR/1.0 (mailto:support@noveltor.com)"},
+                )
+                if r.status_code == 200:
+                    item = r.json().get("message", {})
+            else:
+                # Bibliographic search
+                r = _req.get(
+                    "https://api.crossref.org/works",
+                    params={"query.bibliographic": raw_text, "rows": 1,
+                            "select": "DOI,score,title,author,container-title,"
+                                      "short-container-title,published,published-print,"
+                                      "published-online,volume,issue,page"},
+                    timeout=6,
+                    headers={"User-Agent": "NovelTOR/1.0 (mailto:support@noveltor.com)"},
+                )
+                items = r.json().get("message", {}).get("items", [])
+                if items and items[0].get("score", 0) > 50:
+                    item = items[0]
+                    doi  = item.get("DOI", "").strip()
+
+            if item:
+                vancouver = _crossref_item_to_vancouver(item)
+                if vancouver:
+                    new_ref = dict(ref)
+                    new_ref["raw_text"] = vancouver
+                    new_ref["doi"]      = doi
+                    enriched.append(new_ref)
+                    formatted += 1
+                    time.sleep(0.12)
+                    continue
+
+        except Exception:
+            pass  # fall through to keep original
+
+        enriched.append(ref)
+        time.sleep(0.12)
+
+    return jsonify({"refs": enriched, "formatted": formatted})
+
+
 @app.route("/enrich-refs", methods=["POST"])
 def enrich_refs():
     """
