@@ -416,14 +416,26 @@ def _build_back(back: Element, data: dict):
         # Use BIBR-N id format to match Data.xml
         ref_el = SubElement(rl, "ref", {"id": f"BIBR-{i}"})
         mc = SubElement(ref_el, "mixed-citation", {"publication-type": "article-journal"})
-        # Strip any trailing DOI URL already present in Vancouver-formatted raw_text
-        # so the <pub-id> element is the single authoritative DOI representation.
+        # Strip any DOI URL/bare-doi already appended by Vancouver formatter so we
+        # don't duplicate it — the <ext-link> below is the single visible DOI link.
         display_text = re.sub(
-            r'\s*https?://doi\.org/\S+\s*$', '', ref_text, flags=re.IGNORECASE
+            r'\s*https?://doi\.org/\S+', '', ref_text, flags=re.IGNORECASE
+        ).strip()
+        display_text = re.sub(
+            r'\s*\bdoi:\s*10\.\S+', '', display_text, flags=re.IGNORECASE
         ).strip()
         _mixed(mc, display_text)
         if doi:
-            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), doi.strip())
+            clean_doi = doi.strip()
+            doi_url   = f"https://doi.org/{clean_doi}"
+            # Use ext-link so the website renderer shows a single clickable hyperlink.
+            # <pub-id> is omitted here because the website renders its text content
+            # as plain text alongside ext-link, which would produce a duplicate.
+            ext = SubElement(mc, "ext-link", {
+                "ext-link-type": "uri",
+                "href": doi_url,
+            })
+            _text(ext, doi_url)
 
 
 # ---------------------------------------------------------------------------
