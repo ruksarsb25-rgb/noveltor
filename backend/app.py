@@ -278,6 +278,68 @@ def export_pdf():
         return jsonify({"error": f"PDF generation failed: {str(e)}"}), 500
 
 
+@app.route("/enrich-refs", methods=["POST"])
+def enrich_refs():
+    """
+    For each reference that has no DOI, query the Crossref API using the
+    raw_text as a bibliographic search string. Returns the same refs list
+    with doi fields filled in where a confident match was found.
+    """
+    import requests as _req
+    import time
+
+    data = request.get_json(force=True)
+    if not data or "refs" not in data:
+        return jsonify({"error": "Expected JSON body with 'refs' key"}), 400
+
+    refs = data["refs"]
+    enriched = []
+    found = 0
+
+    for ref in refs:
+        raw_text = ref.get("raw_text", "").strip()
+        existing_doi = ref.get("doi", "").strip()
+
+        # Already has DOI — skip Crossref lookup
+        if existing_doi:
+            enriched.append(ref)
+            continue
+
+        if not raw_text:
+            enriched.append(ref)
+            continue
+
+        try:
+            resp = _req.get(
+                "https://api.crossref.org/works",
+                params={"query.bibliographic": raw_text, "rows": 1, "select": "DOI,score,title"},
+                timeout=6,
+                headers={"User-Agent": "NovelTOR/1.0 (mailto:support@noveltor.com)"},
+            )
+            items = resp.json().get("message", {}).get("items", [])
+            doi = ""
+            if items:
+                top = items[0]
+                score = top.get("score", 0)
+                # Crossref scores > 50 indicate a confident bibliographic match
+                if score > 50:
+                    doi = top.get("DOI", "").strip()
+
+            new_ref = dict(ref)
+            new_ref["doi"] = doi
+            if doi:
+                found += 1
+            enriched.append(new_ref)
+
+            # Be polite to Crossref — 10 req/s max
+            time.sleep(0.12)
+
+        except Exception:
+            enriched.append(ref)
+
+    return jsonify({"refs": enriched, "found": found})
+
+
 if __name__ == "__main__":
     port = int(os.getenv("FLASK_PORT", 5000))
     debug = os.getenv("FLASK_DEBUG", "true").lower() == "true"

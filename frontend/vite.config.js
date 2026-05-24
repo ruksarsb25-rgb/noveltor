@@ -14,6 +14,7 @@ export default defineConfig({
       '/health': 'http://localhost:5001',
       '/export': 'http://localhost:5001',
       '/preview': 'http://localhost:5001',
+      '/enrich-refs': 'http://localhost:5001',
     },
   },
 })

@@ -199,6 +199,8 @@ function TablePreview({ table }) {
 
 export default function SectionsScreen({ article, onChange, onNext }) {
   const [autoTagging, setAutoTagging] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMsg, setEnrichMsg] = useState("");
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -304,6 +306,36 @@ export default function SectionsScreen({ article, onChange, onNext }) {
     onChange({ ...article, references: [...references, { number: references.length + 1, raw_text: "", doi: "" }] });
   const removeReference = (i) =>
     onChange({ ...article, references: references.filter((_, idx) => idx !== i) });
+
+  const enrichDois = async () => {
+    const missing = references.filter((r) => !refDoi(r));
+    if (missing.length === 0) {
+      setEnrichMsg("All references already have DOIs.");
+      setTimeout(() => setEnrichMsg(""), 3000);
+      return;
+    }
+    setEnriching(true);
+    setEnrichMsg("");
+    try {
+      const res = await fetch("/enrich-refs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refs: references }),
+      });
+      const json = await res.json();
+      if (json.refs) {
+        onChange({ ...article, references: json.refs });
+        const n = json.found ?? 0;
+        setEnrichMsg(n > 0 ? `Found ${n} DOI${n > 1 ? "s" : ""} via Crossref.` : "No new DOIs found.");
+        setTimeout(() => setEnrichMsg(""), 5000);
+      }
+    } catch {
+      setEnrichMsg("Crossref lookup failed.");
+      setTimeout(() => setEnrichMsg(""), 4000);
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   const updateFigure = (i, field, value) => {
     const figs = [...figures];
@@ -431,7 +463,19 @@ export default function SectionsScreen({ article, onChange, onNext }) {
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-slate-800">References</h3>
-          <Button variant="secondary" onClick={addReference}>+ Add Reference</Button>
+          <div className="flex items-center gap-2">
+            {enrichMsg && (
+              <span className="text-xs text-slate-500">{enrichMsg}</span>
+            )}
+            <Button
+              variant="secondary"
+              onClick={enrichDois}
+              disabled={enriching || references.length === 0}
+            >
+              {enriching ? "Looking up…" : "🔍 Enrich DOIs"}
+            </Button>
+            <Button variant="secondary" onClick={addReference}>+ Add Reference</Button>
+          </div>
         </div>
         {references.length === 0 ? (
           <p className="text-slate-400 text-sm italic">No references detected.</p>
