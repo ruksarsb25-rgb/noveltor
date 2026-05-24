@@ -317,7 +317,7 @@ export default function SectionsScreen({ article, onChange, onNext }) {
     setEnriching(true);
     setEnrichMsg("");
     try {
-      const res = await fetch("/enrich-refs", {
+      const res = await fetch(`${API_BASE}/enrich-refs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refs: references }),
