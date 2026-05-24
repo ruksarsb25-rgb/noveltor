@@ -322,16 +322,20 @@ export default function SectionsScreen({ article, onChange, onNext }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refs: references }),
       });
-      const json = await res.json();
+      let json;
+      try { json = await res.json(); } catch { json = {}; }
       if (json.refs) {
         onChange({ ...article, references: json.refs });
         const n = json.found ?? 0;
         setEnrichMsg(n > 0 ? `Found ${n} DOI${n > 1 ? "s" : ""} via Crossref.` : "No new DOIs found.");
         setTimeout(() => setEnrichMsg(""), 5000);
+      } else {
+        setEnrichMsg(`Error: ${json.error || `HTTP ${res.status}`}`);
+        setTimeout(() => setEnrichMsg(""), 6000);
       }
-    } catch {
-      setEnrichMsg("Crossref lookup failed.");
-      setTimeout(() => setEnrichMsg(""), 4000);
+    } catch (err) {
+      setEnrichMsg(`Failed: ${err.message}`);
+      setTimeout(() => setEnrichMsg(""), 5000);
     } finally {
       setEnriching(false);
     }
