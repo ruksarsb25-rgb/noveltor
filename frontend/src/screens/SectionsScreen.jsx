@@ -540,7 +540,15 @@ export default function SectionsScreen({ article, onChange, onNext }) {
                       className="text-xs"
                     />
                     {refDoi(ref) && (
-                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0">✓</span>
+                      <a
+                        href={`https://doi.org/${refDoi(ref)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap"
+                        title="Open DOI"
+                      >
+                        ✓ Open ↗
+                      </a>
                     )}
                   </div>
                 </div>

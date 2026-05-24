@@ -418,7 +418,13 @@ def _build_back(back: Element, data: dict):
         mc = SubElement(ref_el, "mixed-citation", {"publication-type": "article-journal"})
         _mixed(mc, ref_text)
         if doi:
-            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), doi)
+            clean_doi = doi.strip()
+            _text(SubElement(mc, "pub-id", {"pub-id-type": "doi"}), clean_doi)
+            ext = SubElement(mc, "ext-link", {
+                "ext-link-type": "uri",
+                "href": f"https://doi.org/{clean_doi}",
+            })
+            _text(ext, f"https://doi.org/{clean_doi}")
 
 
 # ---------------------------------------------------------------------------

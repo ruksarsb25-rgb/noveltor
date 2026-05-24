@@ -335,7 +335,7 @@ def _crossref_item_to_vancouver(item: dict) -> str:
             loc += f":{pages}"
         parts.append(f"{journal}. {loc}.".strip())
     if doi:
-        parts.append(f"doi:{doi}")
+        parts.append(f"https://doi.org/{doi}")
 
     return " ".join(parts)
 
