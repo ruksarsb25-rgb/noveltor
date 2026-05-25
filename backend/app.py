@@ -266,7 +266,7 @@ def export_pdf():
         from pdf_gen.html_template import build_html
         from pdf_gen.renderer import render_pdf
 
-        html_str  = build_html(data)
+        html_str  = build_html(data, two_col=True)
         pdf_bytes = render_pdf(html_str)
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"

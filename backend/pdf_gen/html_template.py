@@ -349,7 +349,7 @@ def _render_content_blocks(sec: dict) -> str:
     return html
 
 
-def build_html(article: dict) -> str:
+def build_html(article: dict, two_col: bool = False) -> str:
     authors      = article.get("authors") or []
     journal_name = (article.get("journal_name") or "Novel Future Proceedings").strip()
     article_type = article.get("article_type") or "Research Article"
@@ -560,7 +560,7 @@ def build_html(article: dict) -> str:
 {doi_html}
 {abstract_html}
 {keywords_html}
-<div class="two-col">
+<div{"  class=\"two-col\"" if two_col else ""}>
 {body_html}
 {refs_html}
 </div>
