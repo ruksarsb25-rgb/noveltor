@@ -178,12 +178,20 @@ body {{
 .abstract-text {{ font-size: 10pt; line-height: 1.6; text-align: justify; }}
 .keywords-line {{ font-size: 9pt; margin-top: 5pt; line-height: 1.5; }}
 
+/* ── Two-column body ── */
+.two-col {{
+    column-count: 2;
+    column-gap: 18pt;
+    column-rule: 0.5pt solid #e0e0e0;
+    margin-top: 10pt;
+}}
+
 /* ── Body ── */
-.body-section       {{ margin-top: 12pt; }}
-.section-heading    {{ font-size: 11pt; font-weight: bold; color: {NAVY}; margin-bottom: 4pt; }}
-.section-body       {{ font-size: 11pt; line-height: 1.6; text-align: justify; margin-bottom: 4pt; }}
-.subsection         {{ margin-top: 7pt; }}
-.subsection-heading {{ font-size: 10.5pt; font-weight: bold; margin-bottom: 3pt; }}
+.body-section       {{ margin-top: 10pt; break-inside: avoid-column; }}
+.section-heading    {{ font-size: 10pt; font-weight: bold; color: {NAVY}; margin-bottom: 3pt; }}
+.section-body       {{ font-size: 9.5pt; line-height: 1.6; text-align: justify; margin-bottom: 4pt; }}
+.subsection         {{ margin-top: 6pt; }}
+.subsection-heading {{ font-size: 9.5pt; font-weight: bold; margin-bottom: 2pt; }}
 
 /* ── Tables ── */
 .table-wrap  {{ margin: 10pt 0; page-break-inside: avoid; }}
@@ -197,24 +205,27 @@ body {{
 .data-table .even td {{ background: #F5F7FA; }}
 
 /* ── Figures ── */
-.figure-wrap {{ margin: 10pt 0; }}
-.figure-img  {{ max-width: 100%; max-height: 170mm; display: block; margin: 0 auto; }}
+.figure-wrap {{ margin: 10pt 0; column-span: all; }}
+.figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 .figure-box  {{
     background: #F5F7FA; border: 1pt solid #ddd;
-    height: 80pt; text-align: center; padding-top: 33pt;
+    height: 70pt; text-align: center; padding-top: 28pt;
     font-size: 9pt; color: #bbb; border-radius: 2pt; margin-bottom: 3pt;
 }}
-.figure-caption {{ font-size: 9pt; font-style: italic; text-align: center; color: #555;
+.figure-caption {{ font-size: 8.5pt; font-style: italic; text-align: center; color: #555;
                    page-break-before: avoid; }}
 
+/* ── Tables ── */
+.table-wrap {{ column-span: all; }}
+
 /* ── References ── */
-.references-section {{ margin-top: 14pt; }}
+.references-section {{ column-span: all; margin-top: 14pt; }}
 .references-heading {{
-    font-size: 11pt; font-weight: bold; color: {NAVY};
+    font-size: 10pt; font-weight: bold; color: {NAVY};
     margin-bottom: 6pt; border-top: 1pt solid #ddd; padding-top: 8pt;
 }}
 .ref-item {{
-    font-size: 9pt; line-height: 1.5; margin-bottom: 3pt;
+    font-size: 8.5pt; line-height: 1.5; margin-bottom: 3pt;
     padding-left: 18pt; text-indent: -18pt;
 }}
 .ref-doi {{ color: {NAVY}; text-decoration: none; }}
@@ -549,7 +560,9 @@ def build_html(article: dict) -> str:
 {doi_html}
 {abstract_html}
 {keywords_html}
+<div class="two-col">
 {body_html}
 {refs_html}
+</div>
 </body>
 </html>"""
