@@ -219,6 +219,8 @@ body {{
 }}
 .ref-doi {{ color: {NAVY}; text-decoration: none; }}
 .ref-doi:hover {{ text-decoration: underline; }}
+.ref-badge {{ color: {NAVY}; text-decoration: none; font-weight: 600; }}
+.ref-badge:hover {{ text-decoration: underline; }}
 a {{ color: {NAVY}; text-decoration: none; }}
 a:hover {{ text-decoration: underline; }}
 """
@@ -511,12 +513,16 @@ def build_html(article: dict) -> str:
                 text = _linkify(raw)
             else:
                 num, text, doi = i, _linkify(str(ref or "").rstrip(".")), ""
+            from urllib.parse import quote as _quote
+            gs_q    = _quote(raw[:300])
+            gs_url  = f"https://scholar.google.com/scholar?q={gs_q}"
+            gs_link = f' [<a class="ref-badge" href="{_html.escape(gs_url, quote=True)}" target="_blank">Google Scholar</a>]'
             if doi:
                 doi_url  = _html.escape(f"https://doi.org/{doi}", quote=True)
-                doi_link = f' <a class="ref-doi" href="{doi_url}">https://doi.org/{_e(doi)}</a>'
+                cr_link  = f' [<a class="ref-badge" href="{doi_url}" target="_blank">CrossRef</a>]'
             else:
-                doi_link = ""
-            ref_items.append(f'<div class="ref-item" id="ref-{num}">[{num}]&nbsp;{text}{doi_link}</div>')
+                cr_link = ""
+            ref_items.append(f'<div class="ref-item" id="ref-{num}">[{num}]&nbsp;{text}{gs_link}{cr_link}</div>')
         refs_html = (
             '<div class="references-section">'
             '<div class="references-heading">References</div>'

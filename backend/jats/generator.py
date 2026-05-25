@@ -425,17 +425,22 @@ def _build_back(back: Element, data: dict):
             r'\s*\bdoi:\s*10\.\S+', '', display_text, flags=re.IGNORECASE
         ).strip()
         _mixed(mc, display_text)
+        # Google Scholar badge — always included so every ref is searchable
+        from urllib.parse import quote as _quote
+        gs_q  = _quote(display_text[:300])
+        gs_el = SubElement(mc, "ext-link", {
+            "ext-link-type": "uri",
+            "href": f"https://scholar.google.com/scholar?q={gs_q}",
+        })
+        _text(gs_el, "[Google Scholar]")
+
         if doi:
             clean_doi = doi.strip()
-            doi_url   = f"https://doi.org/{clean_doi}"
-            # Use ext-link so the website renderer shows a single clickable hyperlink.
-            # <pub-id> is omitted here because the website renders its text content
-            # as plain text alongside ext-link, which would produce a duplicate.
-            ext = SubElement(mc, "ext-link", {
+            cr_el = SubElement(mc, "ext-link", {
                 "ext-link-type": "uri",
-                "href": doi_url,
+                "href": f"https://doi.org/{clean_doi}",
             })
-            _text(ext, doi_url)
+            _text(cr_el, "[CrossRef]")
 
 
 # ---------------------------------------------------------------------------

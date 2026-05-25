@@ -225,6 +225,7 @@ def build_web_html(article: dict) -> str:
             body_html += _render_content_blocks(sub.get("content") or [])
 
     # ── References ───────────────────────────────────────────────────────────
+    from urllib.parse import quote as _quote
     ref_items_html = ""
     for i, ref in enumerate(references, 1):
         raw   = (ref.get("raw_text") or str(ref) if isinstance(ref, dict) else str(ref)).rstrip(".")
@@ -233,9 +234,13 @@ def build_web_html(article: dict) -> str:
             raw = re.sub(r'\bhttps?://doi\.org/\S+', '', raw, flags=re.IGNORECASE)
             raw = re.sub(r'\bdoi:\s*10\.\S+', '', raw, flags=re.IGNORECASE)
             raw = ' '.join(raw.split())
-        doi_link = (f' <a href="https://doi.org/{_e(doi_r)}" target="_blank" style="color:{NAVY};">https://doi.org/{_e(doi_r)}</a>'
-                    if doi_r else "")
-        ref_items_html += f'<div class="ref-item" id="ref-{i}">[{i}] {_linkify(raw)}{doi_link}</div>'
+        badge_style = f'color:{NAVY}; font-weight:600; text-decoration:none;'
+        gs_q    = _quote(raw[:300])
+        gs_url  = f"https://scholar.google.com/scholar?q={gs_q}"
+        gs_link = f' [<a href="{gs_url}" target="_blank" style="{badge_style}">Google Scholar</a>]'
+        cr_link = (f' [<a href="https://doi.org/{_e(doi_r)}" target="_blank" style="{badge_style}">CrossRef</a>]'
+                   if doi_r else "")
+        ref_items_html += f'<div class="ref-item" id="ref-{i}">[{i}] {_linkify(raw)}{gs_link}{cr_link}</div>'
 
     # ── Right panel content ───────────────────────────────────────────────────
     # Metrics panel
