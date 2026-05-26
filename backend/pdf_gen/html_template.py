@@ -542,6 +542,8 @@ def build_html(article: dict, two_col: bool = False) -> str:
         )
 
     css = _css(journal_name)
+    body_wrapper_open  = '<div class="two-col">' if two_col else "<div>"
+    body_wrapper_close = "</div>"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -560,9 +562,9 @@ def build_html(article: dict, two_col: bool = False) -> str:
 {doi_html}
 {abstract_html}
 {keywords_html}
-<div{"  class=\"two-col\"" if two_col else ""}>
+{body_wrapper_open}
 {body_html}
 {refs_html}
-</div>
+{body_wrapper_close}
 </body>
 </html>"""
