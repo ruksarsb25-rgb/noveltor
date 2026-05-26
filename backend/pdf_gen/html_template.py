@@ -205,7 +205,7 @@ body {{
 .data-table .even td {{ background: #F5F7FA; }}
 
 /* ── Figures ── */
-.figure-wrap {{ margin: 10pt 0; column-span: all; }}
+.figure-wrap {{ margin: 10pt 0; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 .figure-box  {{
     background: #F5F7FA; border: 1pt solid #ddd;
@@ -215,11 +215,8 @@ body {{
 .figure-caption {{ font-size: 8.5pt; font-style: italic; text-align: center; color: #555;
                    page-break-before: avoid; }}
 
-/* ── Tables ── */
-.table-wrap {{ column-span: all; }}
-
-/* ── References ── */
-.references-section {{ column-span: all; margin-top: 14pt; }}
+/* ── References (rendered outside the two-col div — naturally full-width) ── */
+.references-section {{ margin-top: 14pt; }}
 .references-heading {{
     font-size: 10pt; font-weight: bold; color: {NAVY};
     margin-bottom: 6pt; border-top: 1pt solid #ddd; padding-top: 8pt;
@@ -564,7 +561,7 @@ def build_html(article: dict, two_col: bool = False) -> str:
 {keywords_html}
 {body_wrapper_open}
 {body_html}
-{refs_html}
 {body_wrapper_close}
+{refs_html}
 </body>
 </html>"""
