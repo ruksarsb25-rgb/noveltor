@@ -64,13 +64,8 @@ def _render_content_blocks(content: list) -> str:
             if text:
                 html += f'<p class="body-text">{_citify(_linkify(text))}</p>'
         elif btype == "equation":
-            latex = (block.get("latex") or "").strip()
-            uri   = block.get("data_uri", "")
-            if latex:
-                # Render via MathJax (injected in <head>); PNG is the fallback
-                escaped = latex.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                html += f'<div class="equation mathjax-eq">\\[{escaped}\\]</div>'
-            elif uri:
+            uri = block.get("data_uri", "")
+            if uri:
                 html += f'<div class="equation"><img src="{uri}" alt="equation" style="max-height:60px;"/></div>'
         elif btype == "table":
             html += _render_table(block)
@@ -474,15 +469,7 @@ table.data-table tr.even td {{ background: #f7f9fc; }}
   padding: 1px 6px; border-radius: 10px; font-weight: 600; margin-left: 6px;
 }}
 .empty-panel {{ color: #aaa; font-size: 13px; font-style: italic; }}
-.mathjax-eq {{ font-size: 1.05em; }}
 </style>
-<script>
-MathJax = {{
-  tex: {{ inlineMath: [['\\\\(','\\\\)']], displayMath: [['\\\\[','\\\\]']] }},
-  options: {{ skipHtmlTags: ['script','noscript','style','textarea','pre'] }}
-}};
-</script>
-<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 </head>
 <body>
 

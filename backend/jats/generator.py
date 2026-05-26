@@ -355,30 +355,15 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
 def _inline_eq(parent: Element, block: dict, data: dict, n: int):
     """
     Emit a JATS <disp-formula> for a display equation.
-    If a latex field is present (extracted by /extract-latex), emit
-    <alternatives><tex-math> + <graphic> so the website can render it
-    with MathJax while the ZIP still carries the PNG fallback.
-    If only a PNG image is available, emit just <graphic>.
+    The image file is named using eq_filename() and exported in the XML ZIP.
     """
-    fname  = eq_filename(data, n)
-    latex  = (block.get("latex") or "").strip()
-    eq_el  = SubElement(parent, "disp-formula", {"id": f"E{n}"})
-
-    if latex:
-        alt = SubElement(eq_el, "alternatives")
-        tm  = SubElement(alt, "tex-math", {"id": f"E{n}M"})
-        tm.text = latex
-        SubElement(alt, "graphic", {
-            "href":         fname,
-            "mimetype":     "image",
-            "mime-subtype": "png",
-        })
-    else:
-        SubElement(eq_el, "graphic", {
-            "href":         fname,
-            "mimetype":     "image",
-            "mime-subtype": "png",
-        })
+    fname = eq_filename(data, n)
+    eq_el = SubElement(parent, "disp-formula", {"id": f"E{n}"})
+    SubElement(eq_el, "graphic", {
+        "href":         fname,
+        "mimetype":     "image",
+        "mime-subtype": "png",
+    })
 
 
 def _inline_table(parent: Element, block: dict):

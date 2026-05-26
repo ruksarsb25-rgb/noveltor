@@ -202,7 +202,6 @@ export default function SectionsScreen({ article, onChange, onNext }) {
   const [enriching, setEnriching] = useState(false);
   const [enrichMsg, setEnrichMsg] = useState("");
   const [formatting, setFormatting] = useState(false);
-  const [extractingLatex, setExtractingLatex] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -288,38 +287,6 @@ export default function SectionsScreen({ article, onChange, onNext }) {
       toast.error(e.message);
     } finally {
       setAutoTagging(false);
-    }
-  };
-
-  const handleExtractLatex = async () => {
-    const eqCount = sections.reduce((n, sec) => {
-      const inSec = (sec.content || []).filter(b => b.type === "equation" && !b.latex).length;
-      const inSub = (sec.subsections || []).reduce((m, s) =>
-        m + (s.content || []).filter(b => b.type === "equation" && !b.latex).length, 0);
-      return n + inSec + inSub;
-    }, 0);
-    if (eqCount === 0) {
-      toast("No new equations to convert — all already have LaTeX.", { icon: "ℹ️" });
-      return;
-    }
-    setExtractingLatex(true);
-    try {
-      const res = await fetch(`${API_BASE}/extract-latex`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sections }),
-      });
-      const json = await res.json();
-      if (json.sections) {
-        onChange({ ...article, sections: json.sections });
-        toast.success(`Converted ${json.converted ?? 0} equation${json.converted !== 1 ? "s" : ""} to LaTeX.`);
-      } else {
-        toast.error(json.error || "Conversion failed");
-      }
-    } catch (e) {
-      toast.error(`Failed: ${e.message}`);
-    } finally {
-      setExtractingLatex(false);
     }
   };
 
@@ -429,22 +396,8 @@ export default function SectionsScreen({ article, onChange, onNext }) {
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
-            onClick={handleExtractLatex}
-            disabled={extractingLatex || autoTagging}
-          >
-            {extractingLatex ? (
-              <>
-                <span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                Converting…
-              </>
-            ) : (
-              "∑ Math → LaTeX"
-            )}
-          </Button>
-          <Button
-            variant="secondary"
             onClick={handleAutoTag}
-            disabled={autoTagging || extractingLatex}
+            disabled={autoTagging}
           >
             {autoTagging ? (
               <>
