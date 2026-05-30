@@ -19,7 +19,7 @@ _TYPE_LABELS = {
     "Research Article":        "RESEARCH ARTICLE",
     "Review":                  "REVIEW ARTICLE",
     "Conference Proceeding":   "CONFERENCE PROCEEDING",
-    "Enhanced Poster Article": "ENHANCED POSTER",
+    "Enhanced Poster Abstract": "ENHANCED POSTER",
     "Conference Report":       "CONFERENCE REPORT",
 }
 

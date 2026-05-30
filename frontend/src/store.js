@@ -9,7 +9,7 @@ export const ARTICLE_TYPES = [
   "Research Article",
   "Review",
   "Conference Proceeding",
-  "Enhanced Poster Article",
+  "Enhanced Poster Abstract",
   "Conference Report",
 ];
 

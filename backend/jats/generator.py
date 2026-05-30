@@ -11,7 +11,7 @@ ARTICLE_TYPE_MAP = {
     "Research Article":        "research-article",
     "Review":                  "review-article",
     "Conference Proceeding":   "proceedings-paper",
-    "Enhanced Poster Article": "poster",
+    "Enhanced Poster Abstract": "poster",
     "Conference Report":       "conference-report",
 }
 

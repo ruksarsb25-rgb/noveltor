@@ -108,7 +108,7 @@ def autotag():
             "You are a JATS XML tagging assistant for academic journals. "
             "Given raw article text, identify and return JSON with: "
             "article_type (one of: Research Article, Review, Conference Proceeding, "
-            "Enhanced Poster Article, Conference Report), "
+            "Enhanced Poster Abstract, Conference Report), "
             "sections (array of {heading: string, type: one of Introduction, Methods, "
             "Results, Discussion, Conclusion, Acknowledgements, Other}), "
             "and missing_sections (array of section type strings that are required but absent). "
@@ -266,7 +266,9 @@ def export_pdf():
         from pdf_gen.html_template import build_html
         from pdf_gen.renderer import render_pdf
 
-        html_str  = build_html(data, two_col=True)
+        # Enhanced Poster Abstract uses single-column layout
+        use_two_col = data.get("article_type") != "Enhanced Poster Abstract"
+        html_str  = build_html(data, two_col=use_two_col)
         pdf_bytes = render_pdf(html_str)
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
