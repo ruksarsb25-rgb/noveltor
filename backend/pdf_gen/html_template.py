@@ -176,7 +176,7 @@ body {{
     text-transform: uppercase; letter-spacing: 0.6pt; margin-bottom: 4pt;
 }}
 .abstract-text {{ font-size: 10pt; line-height: 1.6; text-align: justify; }}
-.keywords-line {{ font-size: 9pt; margin-top: 5pt; line-height: 1.5; }}
+.keywords-line {{ font-size: 10pt; margin-top: 5pt; line-height: 1.5; }}
 
 /* ── Two-column body ── */
 .two-col {{
