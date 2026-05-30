@@ -19,7 +19,7 @@ _TYPE_LABELS = {
     "Research Article":        "RESEARCH ARTICLE",
     "Review":                  "REVIEW ARTICLE",
     "Conference Proceeding":   "CONFERENCE PROCEEDING",
-    "Enhanced Poster Abstract": "ENHANCED POSTER",
+    "Enhanced Poster Abstract": "ENHANCED POSTER ABSTRACT",
     "Conference Report":       "CONFERENCE REPORT",
 }
 
@@ -207,6 +207,8 @@ body {{
 /* ── Figures ── */
 .figure-wrap {{ margin: 10pt 0; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
+/* Poster: images fill the full page width, no height cap */
+body.poster .figure-img {{ width: 100%; max-height: none; }}
 .figure-box  {{
     background: #F5F7FA; border: 1pt solid #ddd;
     height: 70pt; text-align: center; padding-top: 28pt;
@@ -541,6 +543,8 @@ def build_html(article: dict, two_col: bool = False) -> str:
     css = _css(journal_name)
     body_wrapper_open  = '<div class="two-col">' if two_col else "<div>"
     body_wrapper_close = "</div>"
+    is_poster  = (article_type == "Enhanced Poster Abstract")
+    body_class = ' class="poster"' if is_poster else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -548,7 +552,7 @@ def build_html(article: dict, two_col: bool = False) -> str:
 <meta charset="UTF-8">
 <style>{css}</style>
 </head>
-<body>
+<body{body_class}>
 {header}
 {badges}
 {title_html}

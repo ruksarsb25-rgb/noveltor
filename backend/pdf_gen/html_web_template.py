@@ -507,13 +507,13 @@ table.data-table tr.even td {{ background: #f7f9fc; }}
     <!-- Title -->
     <h1 class="article-title" id="article-title">{title}</h1>
     {doi_html}
-    {dates_html}
 
     <!-- Authors -->
     <div id="authors">
       <div class="authors-line">{authors_line}</div>
       <div class="affils">{affils_html}</div>
     </div>
+    {dates_html}
 
     <!-- Abstract -->
     {f'<div class="abstract-box" id="abstract"><h3>Abstract</h3><p>{_e_fmt(abstract)}</p></div>' if abstract else ""}
