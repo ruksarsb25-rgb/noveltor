@@ -194,6 +194,12 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
     1. Numbered heading regex — most reliable for NFP manuscripts:
        "1. Introduction" → h2, "2.1 Chemicals" → h3
     2. DOCX style name — used when no number prefix is present.
+    3. Bold fallback (only when is_bold=True) — for poster/unnumbered documents
+       where section headings are bold but have no number prefix and no Heading
+       style applied. A bold paragraph is treated as h2 when:
+         • ≤ 10 words (headings are short labels, not full sentences)
+         • starts with an uppercase letter
+         • contains no mid-sentence period (rules out bold sentences in body text)
     """
     m = _NUMBERED_HEADING_RE.match(text)
     if m:
@@ -208,6 +214,17 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
         return "h2"
     if style == "Heading 3":
         return "h3"
+
+    # ── Bold fallback for unnumbered / poster documents ───────────────────────
+    if is_bold and text:
+        words = text.split()
+        if (
+            len(words) <= 10                        # short — heading-like
+            and text[0].isupper()                   # starts with capital
+            and not re.search(r'\.\s+[A-Z]', text) # no "sentence. Next" pattern
+            and not text.endswith(".")              # not a full sentence
+        ):
+            return "h2"
 
     return None
 
@@ -412,9 +429,12 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 state["keywords"] = [k.strip() for k in re.split(r"[,;]", kw_part) if k.strip()]
                 phase = "body"
                 continue
-            if heading_level and not is_abstract:
+            if heading_explicit and not is_abstract:
                 phase = "body"
                 # intentional fall-through — this heading starts the body
+                # (use heading_explicit here, not heading_level, so that bold
+                # emphasis phrases inside the abstract body don't prematurely
+                # end the abstract collection)
             else:
                 fmt = _para_text_with_fmt(p)
                 state["abstract"] = (state["abstract"] + " " + fmt).strip()
