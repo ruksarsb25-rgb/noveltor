@@ -10,8 +10,11 @@ function Spinner({ white }) {
 }
 
 export default function AbstractCollectionScreen({ collection, onReset }) {
-  const abstracts  = collection.abstracts || [];
-  const docTitle   = collection.doc_title || "Abstract Collection";
+  const abstracts       = collection.abstracts || [];
+  const docTitle        = collection.doc_title || "Abstract Collection";
+  const collectionType  = collection.collection_type === "poster_abstracts"
+    ? "Poster Abstract Collection"
+    : "Abstract Collection";
 
   const [search, setSearch]       = useState("");
   const [expanded, setExpanded]   = useState(null);
@@ -70,7 +73,7 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-[#0F3557]">Abstract Collection</h2>
+          <h2 className="text-2xl font-semibold text-[#0F3557]">{collectionType}</h2>
           <p className="text-slate-500 text-sm mt-1">
             {abstracts.length} abstract{abstracts.length !== 1 ? "s" : ""} parsed — review and export as JATS XML bundle.
           </p>

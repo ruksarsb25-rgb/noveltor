@@ -54,9 +54,10 @@ def parse():
             file.save(tmp.name)
             tmp_path = tmp.name
 
-        if doc_mode == "abstracts":
+        if doc_mode in ("abstracts", "poster_abstracts"):
             from parser.abstract_parser import parse_abstract_collection
             result = parse_abstract_collection(tmp_path)
+            result["collection_type"] = doc_mode  # "abstracts" or "poster_abstracts"
         else:
             result = parse_docx(tmp_path)
         return jsonify(result)

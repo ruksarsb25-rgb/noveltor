@@ -1,11 +1,11 @@
 import React, { useRef, useState, useCallback } from "react";
 import { Button, Card } from "../components/FormField.jsx";
-import mammoth from "mammoth";
 import { API_BASE } from "../utils/api.js";
 
 const DOC_MODES = [
-  { value: "article",   label: "Research Article",           desc: "Full paper with sections, references, figures" },
-  { value: "abstracts", label: "Abstract Collection",        desc: "Multiple conference abstracts in one document" },
+  { value: "article",          label: "Research Article",         desc: "Full paper with sections, references, figures" },
+  { value: "abstracts",        label: "Abstract Collection",      desc: "Multiple oral/poster abstracts in one document" },
+  { value: "poster_abstracts", label: "Poster Abstract Collection", desc: "Conference poster abstracts in one document" },
 ];
 
 export default function UploadScreen({ onParsed }) {
@@ -99,7 +99,7 @@ export default function UploadScreen({ onParsed }) {
         {/* Document mode selector */}
         <div className="mb-6">
           <p className="text-sm font-medium text-slate-700 mb-2">Document type</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {DOC_MODES.map((m) => (
               <button
                 key={m.value}
