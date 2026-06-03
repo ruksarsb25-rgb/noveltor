@@ -7,18 +7,26 @@ import UploadScreen from "./screens/UploadScreen.jsx";
 import MetadataScreen from "./screens/MetadataScreen.jsx";
 import SectionsScreen from "./screens/SectionsScreen.jsx";
 import ExportScreen from "./screens/ExportScreen.jsx";
+import AbstractCollectionScreen from "./screens/AbstractCollectionScreen.jsx";
 
-import { defaultArticle, saveDraft, loadDraft, sectionBodyText } from "./store.js";
+import { defaultArticle, saveDraft, loadDraft } from "./store.js";
 
 const NFP_DEFAULTS = defaultArticle();
-
 const DRAFT = loadDraft();
 
 export default function App() {
   const [step, setStep] = useState(1);
   const [article, setArticle] = useState(DRAFT || defaultArticle());
+  const [abstractCollection, setAbstractCollection] = useState(null);
 
   const handleParsed = useCallback((parsed) => {
+    // Abstract collection — go to dedicated screen
+    if (parsed.type === "abstract_collection") {
+      setAbstractCollection(parsed);
+      setStep("abstracts");
+      return;
+    }
+
     setArticle((prev) => ({
       ...prev,
       title: parsed.title || prev.title,
@@ -28,7 +36,6 @@ export default function App() {
       sections: parsed.sections || prev.sections,
       references: parsed.references || prev.references,
       figures: parsed.figures || prev.figures,
-      // Journal identity is never inferred from manuscript — always reset to NFP defaults
       journal_name: NFP_DEFAULTS.journal_name,
       publisher_name: NFP_DEFAULTS.publisher_name,
       publisher_loc: NFP_DEFAULTS.publisher_loc,
@@ -41,39 +48,33 @@ export default function App() {
     toast.success("Draft saved");
   };
 
+  // Abstract collection mode — bypass normal step flow
+  if (step === "abstracts" && abstractCollection) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <Toaster position="top-right" toastOptions={{ className: "text-sm font-medium", duration: 3000 }} />
+        <Header currentStep={1} onStepClick={() => {}} onSaveDraft={null} />
+        <main className="flex-1">
+          <AbstractCollectionScreen
+            collection={abstractCollection}
+            onReset={() => { setAbstractCollection(null); setStep(1); }}
+          />
+        </main>
+      </div>
+    );
+  }
+
   const Screen = {
     1: <UploadScreen onParsed={handleParsed} />,
-    2: (
-      <MetadataScreen
-        article={article}
-        onChange={setArticle}
-        onNext={() => setStep(3)}
-      />
-    ),
-    3: (
-      <SectionsScreen
-        article={article}
-        onChange={setArticle}
-        onNext={() => setStep(4)}
-      />
-    ),
+    2: <MetadataScreen article={article} onChange={setArticle} onNext={() => setStep(3)} />,
+    3: <SectionsScreen article={article} onChange={setArticle} onNext={() => setStep(4)} />,
     4: <ExportScreen article={article} />,
   }[step];
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          className: "text-sm font-medium",
-          duration: 3000,
-        }}
-      />
-      <Header
-        currentStep={step}
-        onStepClick={setStep}
-        onSaveDraft={handleSaveDraft}
-      />
+      <Toaster position="top-right" toastOptions={{ className: "text-sm font-medium", duration: 3000 }} />
+      <Header currentStep={step} onStepClick={setStep} onSaveDraft={handleSaveDraft} />
       <main className="flex-1">{Screen}</main>
     </div>
   );

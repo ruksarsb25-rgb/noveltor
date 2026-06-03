@@ -47,12 +47,18 @@ def parse():
     if not allowed_file(file.filename):
         return jsonify({"error": "Only .docx files are supported"}), 400
 
+    doc_mode = request.form.get("doc_mode", "article")  # article | abstracts
+
     try:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
 
-        result = parse_docx(tmp_path)
+        if doc_mode == "abstracts":
+            from parser.abstract_parser import parse_abstract_collection
+            result = parse_abstract_collection(tmp_path)
+        else:
+            result = parse_docx(tmp_path)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Parsing failed: {str(e)}"}), 500
@@ -61,6 +67,122 @@ def parse():
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+@app.route("/export/abstracts-xml-zip", methods=["POST"])
+def export_abstracts_xml_zip():
+    """
+    Generate a ZIP containing one JATS XML file per abstract.
+    Body: {"doc_title": "...", "abstracts": [{title, authors, abstract, keywords}, ...]}
+    """
+    import zipfile, io as _io
+    from xml.etree.ElementTree import Element, SubElement, tostring
+    from xml.dom import minidom
+
+    data = request.get_json(force=True)
+    if not data or "abstracts" not in data:
+        return jsonify({"error": "Expected JSON body with 'abstracts' key"}), 400
+
+    abstracts  = data["abstracts"]
+    doc_title  = data.get("doc_title", "Abstracts")
+    journal    = data.get("journal_name", "Novel Future Proceedings")
+    publisher  = data.get("publisher_name", "Novel Future Publishers Inc.")
+    event_name = data.get("event_name", doc_title)
+    year       = str(data.get("year", "2025"))
+
+    def _txt(el, val):
+        el.text = str(val or "")
+        return el
+
+    def _make_abstract_xml(ab: dict, idx: int) -> str:
+        root = Element("article")
+        root.set("xml:lang", "en")
+        root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
+        root.set("article-type", "abstract")
+        root.set("dtd-version", "1.3")
+
+        front = SubElement(root, "front")
+
+        # journal-meta
+        jm = SubElement(front, "journal-meta")
+        _txt(SubElement(jm, "journal-title-group").append(
+            SubElement(Element("dummy"), "journal-title")), "")   # placeholder
+        jmtg = SubElement(jm, "journal-title-group")
+        _txt(SubElement(jmtg, "journal-title"), journal)
+        pub = SubElement(jm, "publisher")
+        _txt(SubElement(pub, "publisher-name"), publisher)
+
+        # article-meta
+        am = SubElement(front, "article-meta")
+
+        tg = SubElement(am, "title-group")
+        _txt(SubElement(tg, "article-title"), ab.get("title", f"Abstract {idx}"))
+
+        # authors
+        authors = ab.get("authors") or []
+        if authors:
+            cg = SubElement(am, "contrib-group")
+            for a in authors:
+                ct = SubElement(cg, "contrib", {"contrib-type": "author"})
+                nm = SubElement(ct, "name")
+                _txt(SubElement(nm, "surname"),    a.get("last_name", ""))
+                _txt(SubElement(nm, "given-names"), a.get("first_name", ""))
+                aff = a.get("affiliation", "")
+                if aff:
+                    _txt(SubElement(ct, "aff"), aff)
+
+        affiliations = ab.get("affiliations") or []
+        for aff in affiliations:
+            _txt(SubElement(am, "aff"), aff)
+
+        # pub-date
+        pd = SubElement(am, "pub-date", {"date-type": "pub", "publication-format": "electronic"})
+        _txt(SubElement(pd, "year"), year)
+
+        # conference meta
+        conf = SubElement(am, "conference")
+        _txt(SubElement(conf, "conf-name"), event_name)
+
+        # abstract
+        abstract_text = ab.get("abstract", "")
+        if abstract_text:
+            ab_el = SubElement(am, "abstract")
+            _txt(SubElement(ab_el, "p"), abstract_text)
+
+        # keywords
+        kws = ab.get("keywords") or []
+        if kws:
+            kg = SubElement(am, "kwd-group", {"kwd-group-type": "author"})
+            for kw in kws:
+                _txt(SubElement(kg, "kwd"), kw)
+
+        raw    = tostring(root, encoding="unicode", xml_declaration=False)
+        pretty = minidom.parseString(raw).toprettyxml(indent="  ")
+        pretty = "\n".join(pretty.split("\n")[1:])   # strip minidom's XML declaration
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.3 20210610//EN"'
+            ' "https://jats.nlm.nih.gov/publishing/1.3/JATS-journalpublishing1-3.dtd">\n'
+            + pretty
+        )
+
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, ab in enumerate(abstracts, 1):
+            slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", ab.get("title", f"abstract_{i}"))[:50].strip("_") or f"abstract_{i}"
+            fname = f"{i:03d}_{slug}.xml"
+            try:
+                xml_str = _make_abstract_xml(ab, i)
+                zf.writestr(fname, xml_str.encode("utf-8"))
+            except Exception:
+                pass
+
+    buf.seek(0)
+    slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", doc_title)[:50].strip("_") or "abstracts"
+    resp = make_response(buf.read())
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_xml_bundle.zip"'
+    return resp
 
 
 @app.route("/generate", methods=["POST"])

@@ -3,12 +3,18 @@ import { Button, Card } from "../components/FormField.jsx";
 import mammoth from "mammoth";
 import { API_BASE } from "../utils/api.js";
 
+const DOC_MODES = [
+  { value: "article",   label: "Research Article",           desc: "Full paper with sections, references, figures" },
+  { value: "abstracts", label: "Abstract Collection",        desc: "Multiple conference abstracts in one document" },
+];
+
 export default function UploadScreen({ onParsed }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | parsing | done | error
   const [errorMsg, setErrorMsg] = useState("");
   const [warnMsg, setWarnMsg] = useState("");
   const [fileName, setFileName] = useState("");
+  const [docMode, setDocMode] = useState("article");
   const inputRef = useRef(null);
 
   const handleFile = useCallback(async (file) => {
@@ -26,6 +32,7 @@ export default function UploadScreen({ onParsed }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("doc_mode", docMode);
 
       const res = await fetch(`${API_BASE}/parse`, { method: "POST", body: formData });
       if (!res.ok) {
@@ -35,7 +42,15 @@ export default function UploadScreen({ onParsed }) {
 
       const data = await res.json();
 
-      // Ensure sections have ids
+      if (data.type === "abstract_collection") {
+        // Abstract collection — pass through directly
+        setStatus("done");
+        setWarnMsg("");
+        onParsed(data);
+        return;
+      }
+
+      // Standard article — ensure sections have ids
       data.sections = (data.sections || []).map((s) => ({
         ...s,
         id: s.id || crypto.randomUUID(),
@@ -59,7 +74,7 @@ export default function UploadScreen({ onParsed }) {
       setErrorMsg(e.message || "Parsing failed");
       setStatus("error");
     }
-  }, [onParsed]);
+  }, [onParsed, docMode]);
 
   const onDrop = useCallback((e) => {
     e.preventDefault();
@@ -76,10 +91,33 @@ export default function UploadScreen({ onParsed }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-64px)] p-8">
       <div className="w-full max-w-xl">
-        <h1 className="text-3xl font-semibold text-[#0F3557] mb-2">Upload Manuscript</h1>
-        <p className="text-slate-500 mb-8">
-          Upload a DOCX file and we'll extract the article structure automatically.
+        <h1 className="text-3xl font-semibold text-[#0F3557] mb-2">Upload Document</h1>
+        <p className="text-slate-500 mb-5">
+          Upload a DOCX file and we'll extract the structure automatically.
         </p>
+
+        {/* Document mode selector */}
+        <div className="mb-6">
+          <p className="text-sm font-medium text-slate-700 mb-2">Document type</p>
+          <div className="grid grid-cols-2 gap-2">
+            {DOC_MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setDocMode(m.value)}
+                className={`text-left p-3 rounded-lg border-2 transition-all ${
+                  docMode === m.value
+                    ? "border-[#0F3557] bg-blue-50"
+                    : "border-slate-200 hover:border-slate-300 bg-white"
+                }`}
+              >
+                <div className={`text-sm font-semibold ${docMode === m.value ? "text-[#0F3557]" : "text-slate-700"}`}>
+                  {m.label}
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">{m.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <Card
           className={`border-2 border-dashed transition-all cursor-pointer ${
