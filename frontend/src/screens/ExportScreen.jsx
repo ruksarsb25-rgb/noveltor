@@ -198,6 +198,25 @@ function ArticlePreview({ article }) {
   );
 }
 
+/** Uniform toolbar button — same height, same font, same radius everywhere. */
+function ToolBtn({ children, onClick, disabled, loading, loadingLabel, primary }) {
+  const base =
+    "inline-flex items-center justify-center gap-1.5 h-9 px-3 text-sm font-medium rounded-lg border transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed";
+  const style = primary
+    ? "bg-[#0F3557] text-white border-[#0F3557] hover:bg-[#0c2a45]"
+    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50";
+  return (
+    <button className={`${base} ${style}`} onClick={onClick} disabled={disabled || loading}>
+      {loading ? (
+        <>
+          <span className={`w-3.5 h-3.5 border-2 ${primary ? "border-white border-t-transparent" : "border-slate-400 border-t-transparent"} rounded-full animate-spin`} />
+          {loadingLabel || "Loading…"}
+        </>
+      ) : children}
+    </button>
+  );
+}
+
 export default function ExportScreen({ article }) {
   const [xml, setXml] = useState("");
   const [loading, setLoading] = useState(false);
@@ -427,48 +446,42 @@ export default function ExportScreen({ article }) {
           <h2 className="text-2xl font-semibold text-[#0F3557]">Preview & Export</h2>
           <p className="text-slate-500 text-sm mt-1">Review, validate, and download your JATS XML and PDF galley.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={generateXml} disabled={loading}>
-            {loading ? "Generating…" : "↺ Regenerate XML"}
-          </Button>
-          <Button variant="secondary" onClick={runValidation} disabled={validating || !xml}>
-            {validating ? "Validating…" : "✓ Validate"}
-          </Button>
-          <Button variant="secondary" onClick={previewXml} disabled={!xml}>⎋ View XML</Button>
-          <Button onClick={downloadXml} disabled={!xml}>⬇ Download XML</Button>
-          <Button onClick={downloadXmlZip} disabled={xmlZipLoading} className="flex items-center gap-2">
-            {xmlZipLoading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                Building…
-              </>
-            ) : "⬇ XML Package"}
-          </Button>
-          <Button variant="secondary" onClick={previewWeb}>⎋ View Web</Button>
-          <Button onClick={downloadHtml} disabled={htmlLoading} className="flex items-center gap-2">
-            {htmlLoading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                Generating HTML…
-              </>
-            ) : "⬇ Download HTML"}
-          </Button>
-          <Button onClick={downloadWebZip} disabled={webLoading} className="flex items-center gap-2">
-            {webLoading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                Building ZIP…
-              </>
-            ) : "⬇ Download Web ZIP"}
-          </Button>
-          <Button onClick={downloadPdf} disabled={pdfLoading} className="flex items-center gap-2">
-            {pdfLoading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                Generating PDF…
-              </>
-            ) : "⬇ Download PDF"}
-          </Button>
+        <div className="flex items-center gap-1.5 flex-wrap">
+
+          {/* ── Utility actions ── */}
+          <ToolBtn onClick={generateXml} disabled={loading} loading={loading} loadingLabel="Generating…">
+            ↺ Regenerate
+          </ToolBtn>
+          <ToolBtn onClick={runValidation} disabled={validating || !xml} loading={validating} loadingLabel="Validating…">
+            ✓ Validate
+          </ToolBtn>
+          <ToolBtn onClick={previewXml} disabled={!xml}>
+            👁 View XML
+          </ToolBtn>
+          <ToolBtn onClick={previewWeb}>
+            👁 Web Preview
+          </ToolBtn>
+
+          {/* ── Divider ── */}
+          <div className="w-px h-6 bg-slate-300 mx-1 self-center" />
+
+          {/* ── Downloads ── */}
+          <ToolBtn primary onClick={downloadXml} disabled={!xml}>
+            ⬇ XML
+          </ToolBtn>
+          <ToolBtn primary onClick={downloadXmlZip} disabled={xmlZipLoading} loading={xmlZipLoading} loadingLabel="Packaging…">
+            ⬇ XML + Images
+          </ToolBtn>
+          <ToolBtn primary onClick={downloadHtml} disabled={htmlLoading} loading={htmlLoading} loadingLabel="Building…">
+            ⬇ HTML
+          </ToolBtn>
+          <ToolBtn primary onClick={downloadWebZip} disabled={webLoading} loading={webLoading} loadingLabel="Zipping…">
+            ⬇ Web ZIP
+          </ToolBtn>
+          <ToolBtn primary onClick={downloadPdf} disabled={pdfLoading} loading={pdfLoading} loadingLabel="Rendering…">
+            ⬇ PDF
+          </ToolBtn>
+
         </div>
       </div>
 
