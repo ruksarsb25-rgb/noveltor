@@ -205,7 +205,16 @@ def parse_abstract_collection(path: str) -> dict:
 
         # ── Author / affiliation block ────────────────────────────────────────
         if in_authors:
-            current["_author_lines"].append(text)
+            # Long paragraph in the author block = abstract body with no label
+            # (some authors skip the "Abstract:" heading entirely).
+            # Heuristic: >80 chars and doesn't look like an affiliation line.
+            is_affil = bool(re.match(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§]+[\s\.\)]', text))
+            if len(text) > 80 and not is_affil and not _CORRESP_RE.search(text):
+                in_abstract = True
+                in_authors  = False
+                current["abstract"] = text
+            else:
+                current["_author_lines"].append(text)
 
     _flush()
 
