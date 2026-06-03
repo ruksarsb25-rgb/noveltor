@@ -70,13 +70,13 @@ def parse():
             pass
 
 
-@app.route("/export/abstracts-xml-zip", methods=["POST"])
-def export_abstracts_xml_zip():
+@app.route("/export/abstracts-xml", methods=["POST"])
+def export_abstracts_xml():
     """
-    Generate a ZIP containing one JATS XML file per abstract.
+    Generate a single JATS XML file containing all abstracts as <article>
+    elements inside an <article-set> root.
     Body: {"doc_title": "...", "abstracts": [{title, authors, abstract, keywords}, ...]}
     """
-    import zipfile, io as _io
     from xml.etree.ElementTree import Element, SubElement, tostring
     from xml.dom import minidom
 
@@ -95,22 +95,18 @@ def export_abstracts_xml_zip():
         el.text = str(val or "")
         return el
 
-    def _make_abstract_xml(ab: dict, idx: int) -> str:
-        root = Element("article")
-        root.set("xml:lang", "en")
-        root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
-        root.set("article-type", "abstract")
-        root.set("dtd-version", "1.3")
+    def _build_article(root_el, ab: dict, idx: int):
+        article = SubElement(root_el, "article")
+        article.set("xml:lang", "en")
+        article.set("article-type", "abstract")
 
-        front = SubElement(root, "front")
+        front = SubElement(article, "front")
 
         # journal-meta
-        jm = SubElement(front, "journal-meta")
-        _txt(SubElement(jm, "journal-title-group").append(
-            SubElement(Element("dummy"), "journal-title")), "")   # placeholder
+        jm   = SubElement(front, "journal-meta")
         jmtg = SubElement(jm, "journal-title-group")
         _txt(SubElement(jmtg, "journal-title"), journal)
-        pub = SubElement(jm, "publisher")
+        pub  = SubElement(jm, "publisher")
         _txt(SubElement(pub, "publisher-name"), publisher)
 
         # article-meta
@@ -126,26 +122,25 @@ def export_abstracts_xml_zip():
             for a in authors:
                 ct = SubElement(cg, "contrib", {"contrib-type": "author"})
                 nm = SubElement(ct, "name")
-                _txt(SubElement(nm, "surname"),    a.get("last_name", ""))
+                _txt(SubElement(nm, "surname"),     a.get("last_name", ""))
                 _txt(SubElement(nm, "given-names"), a.get("first_name", ""))
                 aff = a.get("affiliation", "")
                 if aff:
                     _txt(SubElement(ct, "aff"), aff)
 
-        affiliations = ab.get("affiliations") or []
-        for aff in affiliations:
+        for aff in (ab.get("affiliations") or []):
             _txt(SubElement(am, "aff"), aff)
 
         # pub-date
         pd = SubElement(am, "pub-date", {"date-type": "pub", "publication-format": "electronic"})
         _txt(SubElement(pd, "year"), year)
 
-        # conference meta
+        # conference
         conf = SubElement(am, "conference")
         _txt(SubElement(conf, "conf-name"), event_name)
 
         # abstract
-        abstract_text = ab.get("abstract", "")
+        abstract_text = (ab.get("abstract") or "").strip()
         if abstract_text:
             ab_el = SubElement(am, "abstract")
             _txt(SubElement(ab_el, "p"), abstract_text)
@@ -157,32 +152,28 @@ def export_abstracts_xml_zip():
             for kw in kws:
                 _txt(SubElement(kg, "kwd"), kw)
 
-        raw    = tostring(root, encoding="unicode", xml_declaration=False)
-        pretty = minidom.parseString(raw).toprettyxml(indent="  ")
-        pretty = "\n".join(pretty.split("\n")[1:])   # strip minidom's XML declaration
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.3 20210610//EN"'
-            ' "https://jats.nlm.nih.gov/publishing/1.3/JATS-journalpublishing1-3.dtd">\n'
-            + pretty
-        )
+    # Build root <article-set>
+    root = Element("article-set")
+    root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
 
-    buf = _io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for i, ab in enumerate(abstracts, 1):
-            slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", ab.get("title", f"abstract_{i}"))[:50].strip("_") or f"abstract_{i}"
-            fname = f"{i:03d}_{slug}.xml"
-            try:
-                xml_str = _make_abstract_xml(ab, i)
-                zf.writestr(fname, xml_str.encode("utf-8"))
-            except Exception:
-                pass
+    for i, ab in enumerate(abstracts, 1):
+        try:
+            _build_article(root, ab, i)
+        except Exception:
+            pass
 
-    buf.seek(0)
-    slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", doc_title)[:50].strip("_") or "abstracts"
-    resp = make_response(buf.read())
-    resp.headers["Content-Type"] = "application/zip"
-    resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_xml_bundle.zip"'
+    raw    = tostring(root, encoding="unicode", xml_declaration=False)
+    pretty = minidom.parseString(raw).toprettyxml(indent="  ")
+    pretty = "\n".join(pretty.split("\n")[1:])   # strip minidom XML declaration
+    xml_str = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + pretty
+    )
+
+    slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", event_name)[:60].strip("_") or "abstracts"
+    resp = make_response(xml_str.encode("utf-8"))
+    resp.headers["Content-Type"] = "application/xml; charset=utf-8"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_abstracts.xml"'
     return resp
 
 

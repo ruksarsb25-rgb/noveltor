@@ -38,7 +38,7 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
   const downloadXmlZip = async () => {
     setExporting(true);
     try {
-      const res = await fetch(`${API_BASE}/export/abstracts-xml-zip`, {
+      const res = await fetch(`${API_BASE}/export/abstracts-xml`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -56,10 +56,10 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `${eventName.replace(/\s+/g, "_").slice(0, 50)}_xml_bundle.zip`;
+      a.download = `${eventName.replace(/\s+/g, "_").slice(0, 50)}_abstracts.xml`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${abstracts.length} XML files`);
+      toast.success(`Downloaded XML with ${abstracts.length} abstracts`);
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -90,7 +90,7 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
             disabled={exporting || abstracts.length === 0}
             className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg bg-[#0F3557] text-white hover:bg-[#0c2a45] disabled:opacity-50 transition-colors"
           >
-            {exporting ? <><Spinner white /> Exporting…</> : `⬇ Export ${abstracts.length} XML files`}
+            {exporting ? <><Spinner white /> Exporting…</> : `⬇ Download XML (${abstracts.length} abstracts)`}
           </button>
         </div>
       </div>
