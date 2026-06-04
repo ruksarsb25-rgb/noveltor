@@ -24,6 +24,8 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
   const [journal, setJournal]     = useState("Novel Future Proceedings");
   const [sectionRef, setSectionRef] = useState("ABS");
   const [locale, setLocale]         = useState("en");
+  const [volume, setVolume]         = useState("1");
+  const [issueNum, setIssueNum]     = useState("1");
 
   const filtered = abstracts.filter((ab) => {
     const q = search.toLowerCase();
@@ -50,6 +52,8 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
           journal_name: journal,
           section_ref:  sectionRef,
           locale:       locale,
+          volume:       volume,
+          issue_num:    issueNum,
         }),
       });
       if (!res.ok) {
@@ -106,14 +110,16 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Native XML Plugin</span>
         </div>
 
-        {/* Section ref warning */}
+        {/* OJS pre-requisites warning */}
         <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 flex gap-2">
           <span className="flex-shrink-0 mt-0.5">⚠️</span>
-          <span>
-            <strong>Section Ref must exist in your OJS journal</strong> before importing.
-            Go to <strong>OJS → Settings → Journal → Sections</strong>, create a section (e.g. "Conference Abstracts")
-            and set its abbreviation to match the value below (e.g. <code className="bg-amber-100 px-1 rounded">ABS</code>).
-          </span>
+          <div className="space-y-1">
+            <p><strong>Before importing, create these in your OJS journal:</strong></p>
+            <ol className="list-decimal ml-4 space-y-0.5">
+              <li><strong>Section</strong> — Settings → Journal → Sections → Add Section. Set abbreviation to match <em>Section Ref</em> below (e.g. <code className="bg-amber-100 px-1 rounded">ABS</code>).</li>
+              <li><strong>Issue</strong> — Issues → Create Issue. Note the volume and number and enter them below.</li>
+            </ol>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
@@ -160,6 +166,28 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
               value={locale}
               onChange={(e) => setLocale(e.target.value)}
               placeholder="en"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">
+              OJS Issue Volume <span className="font-normal text-amber-600">← must exist in OJS</span>
+            </label>
+            <input
+              className="w-full border-2 border-amber-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              value={volume}
+              onChange={(e) => setVolume(e.target.value)}
+              placeholder="1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">
+              OJS Issue Number <span className="font-normal text-amber-600">← must exist in OJS</span>
+            </label>
+            <input
+              className="w-full border-2 border-amber-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              value={issueNum}
+              onChange={(e) => setIssueNum(e.target.value)}
+              placeholder="1"
             />
           </div>
         </div>

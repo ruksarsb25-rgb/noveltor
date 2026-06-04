@@ -92,6 +92,8 @@ def export_abstracts_xml():
     year       = str(data.get("year", "2025"))
     locale     = data.get("locale", "en")
     section    = data.get("section_ref", "ABS")
+    volume     = str(data.get("volume", "1"))
+    issue_num  = str(data.get("issue_num", "1"))
 
     def _txt(el, val):
         el.text = str(val or "")
@@ -121,7 +123,7 @@ def export_abstracts_xml():
         # Note: locale attribute is NOT allowed on <publication> per native.xsd
         pub = SubElement(article, "publication")
         pub.set("version",            "1")
-        pub.set("status",             "3")         # 3 = queued/submitted (avoids requiring issue assignment)
+        pub.set("status",             "1")         # 1 = queued (submitted, not yet published)
         pub.set("primary_contact_id", "0")
         pub.set("url_path",           "")
         pub.set("seq",                str(seq - 1))
@@ -129,6 +131,12 @@ def export_abstracts_xml():
         pub.set("access_status",      "0")
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
+
+        # Issue identification — must reference an existing OJS issue
+        issue_id = SubElement(pub, "issue_identification")
+        _txt(SubElement(issue_id, "volume"), volume)
+        _txt(SubElement(issue_id, "number"), issue_num)
+        _txt(SubElement(issue_id, "year"),   year)
 
         # Title
         title_el = SubElement(pub, "title")
