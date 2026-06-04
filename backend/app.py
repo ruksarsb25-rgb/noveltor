@@ -117,15 +117,13 @@ def export_abstracts_xml():
 
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
-        # <publication> - minimal structure to allow OJS to create/save it
-        # Let OJS handle status, section assignment, and other metadata
+        # <publication> - minimal structure
+        # section_ref MUST be attribute, NOT child element
         pub = SubElement(article, "publication")
-        pub.set("version", "1")
+        pub.set("version",     "1")
+        pub.set("section_ref", section)
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
-
-        # Section reference - only as child element, not attribute
-        _txt(SubElement(pub, "section_ref"), section)
 
         # Title
         title_el = SubElement(pub, "title")
