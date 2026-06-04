@@ -98,31 +98,54 @@ def export_abstracts_xml():
         return el
 
     def _build_article(root_el: Element, ab: dict, seq: int):
-        article = SubElement(root_el, "article")
-        article.set("locale",               locale)
-        article.set("submission_progress",  "0")
-        article.set("stage",                "production")
-        article.set("section_ref",          section)
+        # OJS 3.x structure:
+        #   <article>          ← submission shell (no content attributes)
+        #     <id/>
+        #     <publication>    ← all metadata lives here
+        #       <id/>
+        #       <title/>
+        #       <abstract/>
+        #       <keywords/>
+        #       <authors/>
+        #     </publication>
+        #   </article>
 
-        # Internal id (OJS will reassign on import; advice=ignore tells it to do so)
+        article = SubElement(root_el, "article")
+        article.set("locale",              locale)
+        article.set("submission_progress", "0")
+        article.set("stage",               "production")
+
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
+        # <publication> carries section_ref and all editorial metadata
+        pub = SubElement(article, "publication")
+        pub.set("locale",             locale)
+        pub.set("version",            "1")
+        pub.set("status",             "1")         # 1 = published
+        pub.set("primary_contact_id", "0")
+        pub.set("url_path",           "")
+        pub.set("seq",                str(seq - 1))
+        pub.set("section_ref",        section)
+        pub.set("access_status",      "0")
+
+        _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
+
         # Title
-        title_el = SubElement(article, "title")
+        title_el = SubElement(pub, "title")
         title_el.set("locale", locale)
         title_el.text = (ab.get("title") or f"Abstract {seq}").strip()
 
         # Abstract
         abstract_text = (ab.get("abstract") or "").strip()
         if abstract_text:
-            ab_el = SubElement(article, "abstract")
+            ab_el = SubElement(pub, "abstract")
             ab_el.set("locale", locale)
             ab_el.text = abstract_text
 
         # Keywords
         kws = ab.get("keywords") or []
         if kws:
-            kwd_group = SubElement(article, "keywords")
+            kwd_group = SubElement(pub, "keywords")
             kwd_group.set("locale", locale)
             for kw in kws:
                 _txt(SubElement(kwd_group, "keyword"), kw.strip())
@@ -130,7 +153,7 @@ def export_abstracts_xml():
         # Authors
         authors = ab.get("authors") or []
         if authors:
-            authors_el = SubElement(article, "authors")
+            authors_el = SubElement(pub, "authors")
             for i, a in enumerate(authors):
                 author_el = SubElement(authors_el, "author")
                 author_el.set("include_in_browse", "true")
@@ -155,10 +178,6 @@ def export_abstracts_xml():
                 email = (a.get("email") or "").strip()
                 if email:
                     _txt(SubElement(author_el, "email"), email)
-
-        # Conference note in the cover letter / comments field
-        if event_name:
-            _txt(SubElement(article, "comments_to_ed"), event_name)
 
     # ── Build root <articles> with OJS namespace ─────────────────────────────
     root = Element("articles")
