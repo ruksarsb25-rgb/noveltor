@@ -118,8 +118,8 @@ def export_abstracts_xml():
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
         # <publication> carries section_ref and all editorial metadata
+        # Note: locale attribute is NOT allowed on <publication> per native.xsd
         pub = SubElement(article, "publication")
-        pub.set("locale",             locale)
         pub.set("version",            "1")
         pub.set("status",             "1")         # 1 = published
         pub.set("primary_contact_id", "0")
@@ -175,9 +175,9 @@ def export_abstracts_xml():
                     aff_el.set("locale", locale)
                     aff_el.text = aff
 
-                email = (a.get("email") or "").strip()
-                if email:
-                    _txt(SubElement(author_el, "email"), email)
+                # <email> is required by native.xsd (one of affiliation/country/email
+                # must be present) — always include it even if empty
+                _txt(SubElement(author_el, "email"), (a.get("email") or "").strip())
 
     # ── Build root <articles> with OJS namespace ─────────────────────────────
     root = Element("articles")
