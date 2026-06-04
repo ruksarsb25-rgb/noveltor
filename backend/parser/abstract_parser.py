@@ -77,6 +77,13 @@ def _looks_like_title(text: str, p) -> bool:
     return False
 
 
+_INST_RE = re.compile(
+    r'\b(Department|Dept|University|College|Institute|School|Laboratory|'
+    r'Centre|Center|Division|Faculty|Hospital|Academy|Foundation)\b',
+    re.IGNORECASE,
+)
+
+
 def _parse_author_block(raw_lines: list) -> dict:
     authors, affiliations, email = [], [], ""
     authors_str = ""
@@ -95,12 +102,42 @@ def _parse_author_block(raw_lines: list) -> dict:
         elif not authors_str:
             authors_str = line
         else:
+            # Could be a continuation affiliation line
             affiliations.append(line)
 
-    for name in re.split(r',\s*', authors_str):
-        name_clean = re.sub(r'[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§,\s]+$', '', name).strip()
+    # ── Strip institution text appended after the last author ─────────────────
+    # e.g. "Smith J, Jones A* Department of Chemistry, Univ of X, India"
+    # Split at first institution keyword that follows an author-name pattern.
+    inst_split = _INST_RE.search(authors_str)
+    if inst_split:
+        aff_part = authors_str[inst_split.start():].strip()
+        authors_str = authors_str[:inst_split.start()].strip().rstrip('*†‡,')
+        if aff_part:
+            affiliations.insert(0, aff_part)
+
+    # ── Normalise "2*and" / "2and" → "2* and " so the split below works ────────
+    authors_str = re.sub(r'([\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§]+)\s*and\b', r'\1 and ', authors_str)
+
+    # ── Split on commas AND "and" / "&" ──────────────────────────────────────
+    raw_names = re.split(r',\s*|\s+and\s+|\s*&\s*', authors_str)
+
+    for name in raw_names:
+        # Strip leading "and" artifacts from split, trailing superscripts/punctuation
+        name_clean = re.sub(r'^and\s+', '', name, flags=re.IGNORECASE)
+        name_clean = re.sub(r'[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§\[\]\(\),]+$', '', name_clean)
+        # Strip trailing single-letter affiliation markers (a, b, c, etc.)
+        name_clean = re.sub(r'\s+[a-d]\s*$', '', name_clean)
+        name_clean = re.sub(r'\s+', ' ', name_clean).strip()
+
         if not name_clean or len(name_clean) < 2:
             continue
+
+        # Skip lines that are actually institution names
+        if _INST_RE.search(name_clean):
+            affiliations.append(name_clean)
+            continue
+
+        # Split "FirstName/Initials LastName"
         parts = name_clean.rsplit(' ', 1)
         authors.append({
             "first_name":    parts[0] if len(parts) > 1 else name_clean,
@@ -110,6 +147,7 @@ def _parse_author_block(raw_lines: list) -> dict:
             "orcid":         "",
             "corresponding": not bool(authors),
         })
+
     return {"authors": authors, "affiliations": affiliations, "email": email}
 
 
