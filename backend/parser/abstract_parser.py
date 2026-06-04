@@ -1,20 +1,14 @@
 """
-Abstract Collection Parser
-Parses a single DOCX containing multiple conference abstracts.
+Abstract Collection Parser — Abstract-label-centric, backward-scan approach.
 
-Detection strategy:
-  • Every paragraph whose maximum run font size is ≥ 13.5 pt is treated as
-    a title paragraph (regardless of bold).  Many authors set the font to 14 pt
-    but leave individual runs non-bold.
-  • Consecutive 14 pt paragraphs with no intervening content are merged into
-    a single title (handles split titles like "Very Long Title:" / "Subtitle").
-  • If the current abstract has not yet received an "Abstract" label and a new
-    14 pt paragraph is encountered, the new paragraph is appended to the
-    existing title (continuation handling).
-  • Packed paragraphs (title + authors in one paragraph via soft \\n line-breaks)
-    are split on \\n to extract author/affiliation lines from the title paragraph.
-  • De-duplication: if the same normalised title appears twice (duplicate
-    abstracts copied in the document), only the first occurrence is kept.
+Each "Abstract" label paragraph is used as the primary boundary anchor.
+
+For each label:
+  1. Scan BACKWARD up to BACK_LIMIT paragraphs to find the title
+     (last bold or 14pt+ paragraph that isn't an author/affiliation line).
+  2. Everything between that title paragraph and the label = author/affil block.
+  3. Scan FORWARD from the label to collect the abstract body and keywords,
+     stopping at the next "Abstract" label.
 """
 
 import re
@@ -25,17 +19,21 @@ _ABSTRACT_LABEL_RE  = re.compile(r'^abstract\s*[:\-]?\s*$', re.IGNORECASE)
 _ABSTRACT_PACKED_RE = re.compile(r'^abstract\s*[:\-]?\s*\n', re.IGNORECASE)
 _EMAIL_RE           = re.compile(r'[\w.+-]+@[\w.-]+\.\w+')
 _CORRESP_RE         = re.compile(r'(corresponding\s+author|e[\-\s]?mail\s*:)', re.IGNORECASE)
+_AFFIL_NUM_RE       = re.compile(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§abcde]+[\s\.\)\,]')
 
+BACK_LIMIT = 20   # paragraphs to scan backward from an Abstract label
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _max_font_pt(p) -> float:
     sizes = [r.font.size.pt for r in p.runs if r.font.size and r.text.strip()]
     return max(sizes) if sizes else 0.0
 
 
+def _any_bold(p) -> bool:
+    return any(r.bold for r in p.runs if r.text.strip())
+
+
 def _split_packed(p) -> list:
-    """Split a paragraph that uses soft \\n line-breaks into logical lines."""
     lines, current = [], []
     for run in p.runs:
         for k, part in enumerate(run.text.split('\n')):
@@ -49,24 +47,35 @@ def _split_packed(p) -> list:
     return [l for l in lines if l]
 
 
-def _is_abstract_label(text: str) -> bool:
-    return bool(_ABSTRACT_LABEL_RE.match(text.strip()))
-
-
-def _is_abstract_packed(raw: str) -> bool:
-    return bool(_ABSTRACT_PACKED_RE.match(raw))
+def _is_abstract_label(text: str, raw: str = "") -> bool:
+    return bool(_ABSTRACT_LABEL_RE.match(text)) or bool(_ABSTRACT_PACKED_RE.match(raw))
 
 
 def _is_keywords(text: str) -> bool:
-    return bool(_KEYWORDS_RE.match(text.strip()))
+    return bool(_KEYWORDS_RE.match(text))
 
 
-def _is_title_size(p) -> bool:
-    """True if any run in this paragraph has font ≥ 13.5 pt."""
-    return _max_font_pt(p) >= 13.5
+def _is_author_affil_line(text: str) -> bool:
+    if not text:
+        return False
+    if _CORRESP_RE.search(text):
+        return True
+    if _EMAIL_RE.search(text) and len(text) < 120:
+        return True
+    if _AFFIL_NUM_RE.match(text):
+        return True
+    return False
 
 
-# ── Author / affiliation parsing ──────────────────────────────────────────────
+def _looks_like_title(text: str, p) -> bool:
+    if _is_author_affil_line(text):
+        return False
+    if _max_font_pt(p) >= 13.5:
+        return True
+    if _any_bold(p) and len(text) >= 10:
+        return True
+    return False
+
 
 def _parse_author_block(raw_lines: list) -> dict:
     authors, affiliations, email = [], [], ""
@@ -77,11 +86,11 @@ def _parse_author_block(raw_lines: list) -> dict:
             m = _EMAIL_RE.search(line)
             if m:
                 email = m.group(0)
-        elif _EMAIL_RE.match(line.lstrip('*')):
+        elif _EMAIL_RE.match(line.lstrip('* ')):
             m = _EMAIL_RE.search(line)
             if m:
                 email = m.group(0)
-        elif re.match(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§]+[\s\.\)]', line):
+        elif _AFFIL_NUM_RE.match(line):
             affiliations.append(line)
         elif not authors_str:
             authors_str = line
@@ -101,125 +110,107 @@ def _parse_author_block(raw_lines: list) -> dict:
             "orcid":         "",
             "corresponding": not bool(authors),
         })
-
     return {"authors": authors, "affiliations": affiliations, "email": email}
 
 
-# ── Main parser ───────────────────────────────────────────────────────────────
-
 def parse_abstract_collection(path: str) -> dict:
     doc = Document(path)
-    paragraphs = doc.paragraphs
+    paras = doc.paragraphs
 
-    abstracts        = []
-    seen_titles      = set()   # de-duplicate
-    current          = None    # abstract dict being built
-    in_abstract      = False   # currently inside abstract body
-    in_authors       = False   # currently inside author/affil block
-    last_title_idx   = -99     # paragraph index of last title paragraph
+    # ── Locate all Abstract label positions ──────────────────────────────────
+    label_positions = []
+    for i, p in enumerate(paras):
+        text = p.text.strip()
+        if _is_abstract_label(text, p.text):
+            label_positions.append(i)
 
-    def _flush():
-        nonlocal current
-        if not current:
-            return
-        parsed = _parse_author_block(current.pop("_author_lines", []))
-        current["authors"]      = parsed["authors"]
-        current["affiliations"] = parsed["affiliations"]
-        current["email"]        = parsed.get("email", "")
+    label_set = set(label_positions)   # for quick lookup
 
-        title_key = re.sub(r'\W+', '', current.get("title", "")).lower()
-        # Keep only entries that have abstract text and a non-trivial title,
-        # and that are not exact duplicates.
-        if (current.get("abstract", "").strip()
-                and len(current.get("title", "")) >= 10
+    abstracts   = []
+    seen_titles = set()
+
+    for k, ab_idx in enumerate(label_positions):
+
+        # ── Backward scan: find the title paragraph ───────────────────────────
+        scan_start = max(0, ab_idx - BACK_LIMIT)
+        # Don't cross a previous abstract label
+        if k > 0:
+            scan_start = max(scan_start, label_positions[k - 1] + 1)
+
+        # Collect non-empty paras in the backward window
+        block = []
+        for j in range(scan_start, ab_idx):
+            text = paras[j].text.strip()
+            if text and j not in label_set:
+                block.append((j, text, paras[j]))
+
+        # Find the title: last bold/14pt paragraph that is not a keywords line
+        title_block_idx = None
+        for bi in range(len(block) - 1, -1, -1):
+            j, text, p = block[bi]
+            if not _is_keywords(text) and _looks_like_title(text, p):
+                title_block_idx = bi
+                break
+
+        # Fallback: first paragraph that isn't an author/affil/corresp/keywords line
+        if title_block_idx is None:
+            for bi, (j, text, p) in enumerate(block):
+                if not _is_author_affil_line(text) and not _is_keywords(text):
+                    title_block_idx = bi
+                    break
+
+        if title_block_idx is None:
+            continue   # can't determine a title — skip
+
+        # ── Extract title (handle packed paragraphs) ─────────────────────────
+        title_j, title_text, title_p = block[title_block_idx]
+        packed_lines = _split_packed(title_p)
+        title = packed_lines[0] if packed_lines else title_text
+
+        # ── Build author block (everything after title para up to label) ──────
+        author_lines = list(packed_lines[1:]) if len(packed_lines) > 1 else []
+        for bi in range(title_block_idx + 1, len(block)):
+            author_lines.append(block[bi][1])
+
+        # ── Forward scan: collect abstract body and keywords ─────────────────
+        abstract_text = ""
+        keywords      = []
+
+        # Handle packed label ("Abstract\nBody text…")
+        ab_packed = _split_packed(paras[ab_idx])
+        if len(ab_packed) > 1:
+            abstract_text = " ".join(ab_packed[1:])
+
+        next_label = label_positions[k + 1] if k + 1 < len(label_positions) else len(paras)
+        for j in range(ab_idx + 1, next_label):
+            text = paras[j].text.strip()
+            if not text:
+                continue
+            if _is_keywords(text):
+                kw_raw   = _KEYWORDS_RE.sub("", text)
+                keywords = [w.strip() for w in re.split(r'[,;]', kw_raw) if w.strip()]
+                break
+            if j in label_set:
+                break
+            abstract_text = (abstract_text + " " + text).strip()
+
+        # ── Quality filter & deduplication ───────────────────────────────────
+        title_key = re.sub(r'\W+', '', title).lower()
+        if (abstract_text.strip()
+                and len(title) >= 10
                 and title_key not in seen_titles):
             seen_titles.add(title_key)
-            abstracts.append(current)
-        current = None
+            parsed = _parse_author_block(author_lines)
+            abstracts.append({
+                "title":        title,
+                "authors":      parsed["authors"],
+                "affiliations": parsed["affiliations"],
+                "email":        parsed.get("email", ""),
+                "abstract":     abstract_text.strip(),
+                "keywords":     keywords,
+            })
 
-    for i, p in enumerate(paragraphs):
-        text = p.text.strip()
-        raw  = p.text          # keep embedded \n for packed detection
-
-        # ── 14 pt title paragraph ────────────────────────────────────────────
-        if _is_title_size(p) and text:
-            # Skip obvious non-title 14pt lines
-            if _is_abstract_label(text) or _is_keywords(text):
-                pass
-            else:
-                # If this 14pt paragraph is immediately consecutive with the
-                # previous one (gap ≤ 2 paragraphs), treat as title continuation.
-                if current is not None and (i - last_title_idx) <= 2:
-                    lines = _split_packed(p)
-                    current["title"] = (current["title"] + " " + lines[0]).strip()
-                    if len(lines) > 1:
-                        current["_author_lines"].extend(lines[1:])
-                    last_title_idx = i
-                    continue
-
-                # Otherwise start a new abstract
-                _flush()
-                in_abstract  = False
-                in_authors   = True
-                last_title_idx = i
-
-                lines = _split_packed(p)
-                title = lines[0] if lines else text
-                rest  = lines[1:] if len(lines) > 1 else []
-
-                current = {
-                    "title":         title,
-                    "_author_lines": rest,
-                    "abstract":      "",
-                    "keywords":      [],
-                }
-                continue
-
-        if current is None:
-            continue
-        if not text:
-            continue
-
-        # ── Keywords ─────────────────────────────────────────────────────────
-        if _is_keywords(text):
-            kw_raw = _KEYWORDS_RE.sub("", text)
-            current["keywords"] = [k.strip() for k in re.split(r'[,;]', kw_raw) if k.strip()]
-            in_abstract = False
-            continue
-
-        # ── Abstract label (standalone or packed) ────────────────────────────
-        if _is_abstract_label(text) or _is_abstract_packed(raw):
-            in_abstract = True
-            in_authors  = False
-            lines = _split_packed(p)
-            # First line is the label; remaining lines are body text
-            body_lines = lines[1:] if len(lines) > 1 else []
-            if body_lines:
-                current["abstract"] = " ".join(body_lines)
-            continue
-
-        # ── Abstract body continuation ────────────────────────────────────────
-        if in_abstract:
-            current["abstract"] = (current["abstract"] + " " + text).strip()
-            continue
-
-        # ── Author / affiliation block ────────────────────────────────────────
-        if in_authors:
-            # Long paragraph in the author block = abstract body with no label
-            # (some authors skip the "Abstract:" heading entirely).
-            # Heuristic: >80 chars and doesn't look like an affiliation line.
-            is_affil = bool(re.match(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§]+[\s\.\)]', text))
-            if len(text) > 80 and not is_affil and not _CORRESP_RE.search(text):
-                in_abstract = True
-                in_authors  = False
-                current["abstract"] = text
-            else:
-                current["_author_lines"].append(text)
-
-    _flush()
-
-    doc_title = next((p.text.strip() for p in paragraphs if p.text.strip()), "")
-
+    doc_title = next((p.text.strip() for p in paras if p.text.strip()), "")
     return {
         "type":      "abstract_collection",
         "doc_title": doc_title,
