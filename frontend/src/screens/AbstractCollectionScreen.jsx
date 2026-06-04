@@ -101,10 +101,21 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
 
       {/* Export settings */}
       <Card className="p-4">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           <h3 className="text-sm font-semibold text-slate-700">OJS Export Settings</h3>
           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Native XML Plugin</span>
         </div>
+
+        {/* Section ref warning */}
+        <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 flex gap-2">
+          <span className="flex-shrink-0 mt-0.5">⚠️</span>
+          <span>
+            <strong>Section Ref must exist in your OJS journal</strong> before importing.
+            Go to <strong>OJS → Settings → Journal → Sections</strong>, create a section (e.g. "Conference Abstracts")
+            and set its abbreviation to match the value below (e.g. <code className="bg-amber-100 px-1 rounded">ABS</code>).
+          </span>
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="text-xs text-slate-500 block mb-1">Conference / Event Name</label>
@@ -131,11 +142,14 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">OJS Section Ref <span className="text-slate-400">(must match your journal)</span></label>
+            <label className="text-xs font-medium text-slate-600 block mb-1">
+              OJS Section Ref
+              <span className="ml-1 font-normal text-amber-600">← must exist in OJS first</span>
+            </label>
             <input
-              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F3557]"
+              className="w-full border-2 border-amber-300 rounded-md px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
               value={sectionRef}
-              onChange={(e) => setSectionRef(e.target.value)}
+              onChange={(e) => setSectionRef(e.target.value.toUpperCase())}
               placeholder="ABS"
             />
           </div>
