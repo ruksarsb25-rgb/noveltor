@@ -73,9 +73,12 @@ def parse():
 @app.route("/export/abstracts-xml", methods=["POST"])
 def export_abstracts_xml():
     """
-    Generate a single JATS XML file containing all abstracts as <article>
-    elements inside an <article-set> root.
-    Body: {"doc_title": "...", "abstracts": [{title, authors, abstract, keywords}, ...]}
+    Generate an OJS Native XML file (native.xsd) containing all abstracts,
+    ready for import via OJS → Tools → Import/Export → Native XML Plugin.
+
+    Root element: <articles xmlns="http://pkp.sfu.ca" ...>
+    Each abstract becomes an <article> with locale-tagged title, abstract,
+    keywords, and authors using OJS's givenname/familyname structure.
     """
     from xml.etree.ElementTree import Element, SubElement, tostring
     from xml.dom import minidom
@@ -85,76 +88,83 @@ def export_abstracts_xml():
         return jsonify({"error": "Expected JSON body with 'abstracts' key"}), 400
 
     abstracts  = data["abstracts"]
-    doc_title  = data.get("doc_title", "Abstracts")
-    journal    = data.get("journal_name", "Novel Future Proceedings")
-    publisher  = data.get("publisher_name", "Novel Future Publishers Inc.")
-    event_name = data.get("event_name", doc_title)
+    event_name = data.get("event_name", data.get("doc_title", "Conference"))
     year       = str(data.get("year", "2025"))
+    locale     = data.get("locale", "en")
+    section    = data.get("section_ref", "ABS")
 
     def _txt(el, val):
         el.text = str(val or "")
         return el
 
-    def _build_article(root_el, ab: dict, idx: int):
+    def _build_article(root_el: Element, ab: dict, seq: int):
         article = SubElement(root_el, "article")
-        article.set("xml:lang", "en")
-        article.set("article-type", "abstract")
+        article.set("locale",               locale)
+        article.set("submission_progress",  "0")
+        article.set("stage",                "production")
+        article.set("section_ref",          section)
 
-        front = SubElement(article, "front")
+        # Internal id (OJS will reassign on import; advice=ignore tells it to do so)
+        _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
-        # journal-meta
-        jm   = SubElement(front, "journal-meta")
-        jmtg = SubElement(jm, "journal-title-group")
-        _txt(SubElement(jmtg, "journal-title"), journal)
-        pub  = SubElement(jm, "publisher")
-        _txt(SubElement(pub, "publisher-name"), publisher)
+        # Title
+        title_el = SubElement(article, "title")
+        title_el.set("locale", locale)
+        title_el.text = (ab.get("title") or f"Abstract {seq}").strip()
 
-        # article-meta
-        am = SubElement(front, "article-meta")
-
-        tg = SubElement(am, "title-group")
-        _txt(SubElement(tg, "article-title"), ab.get("title", f"Abstract {idx}"))
-
-        # authors
-        authors = ab.get("authors") or []
-        if authors:
-            cg = SubElement(am, "contrib-group")
-            for a in authors:
-                ct = SubElement(cg, "contrib", {"contrib-type": "author"})
-                nm = SubElement(ct, "name")
-                _txt(SubElement(nm, "surname"),     a.get("last_name", ""))
-                _txt(SubElement(nm, "given-names"), a.get("first_name", ""))
-                aff = a.get("affiliation", "")
-                if aff:
-                    _txt(SubElement(ct, "aff"), aff)
-
-        for aff in (ab.get("affiliations") or []):
-            _txt(SubElement(am, "aff"), aff)
-
-        # pub-date
-        pd = SubElement(am, "pub-date", {"date-type": "pub", "publication-format": "electronic"})
-        _txt(SubElement(pd, "year"), year)
-
-        # conference
-        conf = SubElement(am, "conference")
-        _txt(SubElement(conf, "conf-name"), event_name)
-
-        # abstract
+        # Abstract
         abstract_text = (ab.get("abstract") or "").strip()
         if abstract_text:
-            ab_el = SubElement(am, "abstract")
-            _txt(SubElement(ab_el, "p"), abstract_text)
+            ab_el = SubElement(article, "abstract")
+            ab_el.set("locale", locale)
+            ab_el.text = abstract_text
 
-        # keywords
+        # Keywords
         kws = ab.get("keywords") or []
         if kws:
-            kg = SubElement(am, "kwd-group", {"kwd-group-type": "author"})
+            kwd_group = SubElement(article, "keywords")
+            kwd_group.set("locale", locale)
             for kw in kws:
-                _txt(SubElement(kg, "kwd"), kw)
+                _txt(SubElement(kwd_group, "keyword"), kw.strip())
 
-    # Build root <article-set>
-    root = Element("article-set")
-    root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
+        # Authors
+        authors = ab.get("authors") or []
+        if authors:
+            authors_el = SubElement(article, "authors")
+            for i, a in enumerate(authors):
+                author_el = SubElement(authors_el, "author")
+                author_el.set("include_in_browse", "true")
+                author_el.set("user_group_ref",    "Author")
+                author_el.set("seq",               str(i))
+                author_el.set("id",                str(i + 1))
+
+                given_el = SubElement(author_el, "givenname")
+                given_el.set("locale", locale)
+                given_el.text = (a.get("first_name") or "").strip()
+
+                family_el = SubElement(author_el, "familyname")
+                family_el.set("locale", locale)
+                family_el.text = (a.get("last_name") or "").strip()
+
+                aff = (a.get("affiliation") or "").strip()
+                if aff:
+                    aff_el = SubElement(author_el, "affiliation")
+                    aff_el.set("locale", locale)
+                    aff_el.text = aff
+
+                email = (a.get("email") or "").strip()
+                if email:
+                    _txt(SubElement(author_el, "email"), email)
+
+        # Conference note in the cover letter / comments field
+        if event_name:
+            _txt(SubElement(article, "comments_to_ed"), event_name)
+
+    # ── Build root <articles> with OJS namespace ─────────────────────────────
+    root = Element("articles")
+    root.set("xmlns",              "http://pkp.sfu.ca")
+    root.set("xmlns:xsi",         "http://www.w3.org/2001/XMLSchema-instance")
+    root.set("xsi:schemaLocation", "http://pkp.sfu.ca native.xsd")
 
     for i, ab in enumerate(abstracts, 1):
         try:
@@ -165,15 +175,12 @@ def export_abstracts_xml():
     raw    = tostring(root, encoding="unicode", xml_declaration=False)
     pretty = minidom.parseString(raw).toprettyxml(indent="  ")
     pretty = "\n".join(pretty.split("\n")[1:])   # strip minidom XML declaration
-    xml_str = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        + pretty
-    )
+    xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty
 
     slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", event_name)[:60].strip("_") or "abstracts"
     resp = make_response(xml_str.encode("utf-8"))
     resp.headers["Content-Type"] = "application/xml; charset=utf-8"
-    resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_abstracts.xml"'
+    resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_ojs.xml"'
     return resp
 
 

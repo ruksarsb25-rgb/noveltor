@@ -22,6 +22,8 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
   const [eventName, setEventName] = useState(docTitle);
   const [year, setYear]           = useState(new Date().getFullYear().toString());
   const [journal, setJournal]     = useState("Novel Future Proceedings");
+  const [sectionRef, setSectionRef] = useState("ABS");
+  const [locale, setLocale]         = useState("en");
 
   const filtered = abstracts.filter((ab) => {
     const q = search.toLowerCase();
@@ -43,9 +45,11 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...collection,
-          event_name:    eventName,
-          year:          year,
-          journal_name:  journal,
+          event_name:   eventName,
+          year:         year,
+          journal_name: journal,
+          section_ref:  sectionRef,
+          locale:       locale,
         }),
       });
       if (!res.ok) {
@@ -56,7 +60,7 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `${eventName.replace(/\s+/g, "_").slice(0, 50)}_abstracts.xml`;
+      a.download = `${eventName.replace(/\s+/g, "_").slice(0, 50)}_ojs.xml`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success(`Downloaded XML with ${abstracts.length} abstracts`);
@@ -97,7 +101,10 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
 
       {/* Export settings */}
       <Card className="p-4">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Export Settings</h3>
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-semibold text-slate-700">OJS Export Settings</h3>
+          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Native XML Plugin</span>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="text-xs text-slate-500 block mb-1">Conference / Event Name</label>
@@ -121,6 +128,24 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F3557]"
               value={year}
               onChange={(e) => setYear(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">OJS Section Ref <span className="text-slate-400">(must match your journal)</span></label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F3557]"
+              value={sectionRef}
+              onChange={(e) => setSectionRef(e.target.value)}
+              placeholder="ABS"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Locale</label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F3557]"
+              value={locale}
+              onChange={(e) => setLocale(e.target.value)}
+              placeholder="en"
             />
           </div>
         </div>
