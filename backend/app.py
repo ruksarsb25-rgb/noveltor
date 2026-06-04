@@ -117,11 +117,14 @@ def export_abstracts_xml():
 
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
-        # <publication> - minimal structure
-        # section_ref MUST be attribute, NOT child element
+        # <publication> - per native.xsd, section_ref is required
+        # seq, primary_contact_id, access_status are optional but recommended
         pub = SubElement(article, "publication")
-        pub.set("version",     "1")
-        pub.set("section_ref", section)
+        pub.set("version",            "1")
+        pub.set("section_ref",        section)
+        pub.set("seq",                str(seq - 1))
+        pub.set("primary_contact_id", "0")
+        pub.set("access_status",      "0")
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
