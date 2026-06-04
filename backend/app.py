@@ -117,16 +117,10 @@ def export_abstracts_xml():
 
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
-        # <publication> carries section_ref and all editorial metadata
-        # Note: locale attribute is NOT allowed on <publication> per native.xsd
+        # <publication> with minimal attributes to avoid OJS validation errors
+        # OJS will complete publication metadata after manual section assignment
         pub = SubElement(article, "publication")
-        pub.set("version",            "1")
-        pub.set("status",             "1")         # 1 = queued (submitted, not yet published)
-        pub.set("primary_contact_id", "0")
-        pub.set("url_path",           "")
-        pub.set("seq",                str(seq - 1))
-        pub.set("section_ref",        section)
-        pub.set("access_status",      "0")
+        pub.set("version", "1")
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
