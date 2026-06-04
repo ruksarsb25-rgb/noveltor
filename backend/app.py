@@ -117,10 +117,12 @@ def export_abstracts_xml():
 
         _txt(SubElement(article, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
-        # <publication> with minimal attributes to avoid OJS validation errors
-        # OJS will complete publication metadata after manual section assignment
+        # <publication> with required attributes per native.xsd
+        # section_ref MUST match an existing section in OJS
         pub = SubElement(article, "publication")
-        pub.set("version", "1")
+        pub.set("version",     "1")
+        pub.set("section_ref", section)
+        pub.set("status",      "1")
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 

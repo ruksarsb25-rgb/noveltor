@@ -106,14 +106,18 @@ export default function AbstractCollectionScreen({ collection, onReset }) {
           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Native XML Plugin</span>
         </div>
 
-        {/* OJS Section requirement */}
-        <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 flex gap-2">
-          <span className="flex-shrink-0 mt-0.5">⚠️</span>
-          <span>
-            <strong>Before importing:</strong> Go to <strong>OJS Settings → Journal → Sections</strong> and create a section
-            with abbreviation matching <em>Section Ref</em> below (e.g. <code className="bg-amber-100 px-1 rounded">ABS</code>).
-            After import, manually assign submissions to an issue in OJS.
-          </span>
+        {/* OJS Section requirement - CRITICAL */}
+        <div className="mb-3 p-3 bg-red-50 border-2 border-red-300 rounded-md text-xs text-red-800 flex gap-2">
+          <span className="flex-shrink-0 mt-0.5 text-base">🔴</span>
+          <div>
+            <p className="font-bold mb-1">REQUIRED: Create section in OJS first</p>
+            <p>
+              Before exporting, create a section in <strong>OJS → Settings → Journal → Sections</strong> with
+              abbreviation <strong>exactly matching</strong> the <em>Section Ref</em> below.
+              Example: If you set Section Ref to <code className="bg-red-100 px-1 rounded font-bold">ABS</code>,
+              you must create a section with abbreviation <code className="bg-red-100 px-1 rounded font-bold">ABS</code> in OJS first.
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
