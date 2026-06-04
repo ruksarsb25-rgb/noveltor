@@ -121,7 +121,7 @@ def export_abstracts_xml():
         # Note: locale attribute is NOT allowed on <publication> per native.xsd
         pub = SubElement(article, "publication")
         pub.set("version",            "1")
-        pub.set("status",             "1")         # 1 = published
+        pub.set("status",             "3")         # 3 = queued/submitted (avoids requiring issue assignment)
         pub.set("primary_contact_id", "0")
         pub.set("url_path",           "")
         pub.set("seq",                str(seq - 1))
