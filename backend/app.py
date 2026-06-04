@@ -126,6 +126,9 @@ def export_abstracts_xml():
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
+        # Section reference as child element (in addition to attribute)
+        _txt(SubElement(pub, "section_ref"), section)
+
         # Title
         title_el = SubElement(pub, "title")
         title_el.set("locale", locale)
