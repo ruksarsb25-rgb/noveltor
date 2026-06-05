@@ -128,6 +128,12 @@ def export_abstracts_xml():
 
         _txt(SubElement(pub, "id", {"type": "internal", "advice": "ignore"}), str(seq))
 
+        # Issue identification - OJS requires this to link publication to an issue
+        issue_id = SubElement(pub, "issue_identification")
+        _txt(SubElement(issue_id, "volume"), "1")
+        _txt(SubElement(issue_id, "number"), "1")
+        _txt(SubElement(issue_id, "year"),   year)
+
         # Title
         title_el = SubElement(pub, "title")
         title_el.set("locale", locale)
