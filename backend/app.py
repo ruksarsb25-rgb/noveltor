@@ -424,6 +424,85 @@ def export_pdf():
         return jsonify({"error": f"PDF generation failed: {str(e)}"}), 500
 
 
+@app.route("/export/word", methods=["POST"])
+def export_word():
+    """Export article as Microsoft Word (.docx) file"""
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        doc = Document()
+
+        # Title
+        title = data.get("title", "Untitled")
+        title_para = doc.add_paragraph(title, style="Heading 1")
+        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Authors
+        authors = data.get("authors", [])
+        if authors:
+            author_names = []
+            for a in authors:
+                name_parts = [a.get("first_name", ""), a.get("last_name", "")]
+                name = " ".join([p for p in name_parts if p]).strip()
+                if name:
+                    author_names.append(name)
+            if author_names:
+                authors_para = doc.add_paragraph(", ".join(author_names))
+                authors_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Affiliations
+        affiliations = data.get("affiliations", [])
+        for aff in affiliations:
+            if aff.strip():
+                aff_para = doc.add_paragraph(aff)
+                aff_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph()  # Spacing
+
+        # Abstract
+        if data.get("abstract"):
+            doc.add_heading("Abstract", level=2)
+            doc.add_paragraph(data["abstract"])
+
+        # Sections
+        sections = data.get("sections", [])
+        for sec in sections:
+            if sec.get("title"):
+                doc.add_heading(sec["title"], level=2)
+            if sec.get("content"):
+                doc.add_paragraph(sec["content"])
+
+        # References
+        references = data.get("references", [])
+        if references:
+            doc.add_heading("References", level=2)
+            for i, ref in enumerate(references, 1):
+                ref_text = ref.get("text", "")
+                if ref_text:
+                    doc.add_paragraph(f"{i}. {ref_text}", style="List Number")
+
+        # Generate file
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", title)[:60].strip("_") or "article"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            doc.save(tmp.name)
+            with open(tmp.name, "rb") as f:
+                docx_bytes = f.read()
+            os.unlink(tmp.name)
+
+        resp = make_response(docx_bytes)
+        resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.docx"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Word export failed: {str(e)}"}), 500
+
+
 def _crossref_item_to_vancouver(item: dict) -> str:
     """
     Format a Crossref work metadata dict as a Vancouver-style citation.

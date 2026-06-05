@@ -333,6 +333,35 @@ export default function ExportScreen({ article }) {
     }
   };
 
+  const [wordLoading, setWordLoading] = useState(false);
+
+  const downloadWord = async () => {
+    setWordLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/word`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Word export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "article").replace(/\s+/g, "_").slice(0, 60)}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Word document downloaded");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWordLoading(false);
+    }
+  };
+
   const downloadHtml = async () => {
     setHtmlLoading(true);
     try {
@@ -480,6 +509,9 @@ export default function ExportScreen({ article }) {
           </ToolBtn>
           <ToolBtn primary onClick={downloadPdf} disabled={pdfLoading} loading={pdfLoading} loadingLabel="Rendering…">
             ⬇ PDF
+          </ToolBtn>
+          <ToolBtn primary onClick={downloadWord} disabled={wordLoading} loading={wordLoading} loadingLabel="Exporting…">
+            ⬇ Word
           </ToolBtn>
 
         </div>
