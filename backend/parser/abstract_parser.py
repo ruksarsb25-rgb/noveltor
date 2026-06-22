@@ -88,6 +88,10 @@ def _parse_author_block(raw_lines: list) -> dict:
     authors, affiliations, email = [], [], ""
     authors_str = ""
 
+    print(f"DEBUG: raw_lines count = {len(raw_lines)}")
+    for i, l in enumerate(raw_lines):
+        print(f"DEBUG: raw_lines[{i}] = {l[:80]}...")
+
     for line in raw_lines:
         if _CORRESP_RE.search(line):
             m = _EMAIL_RE.search(line)
@@ -120,11 +124,13 @@ def _parse_author_block(raw_lines: list) -> dict:
         if aff_part:
             affiliations.insert(0, aff_part)
 
+    print(f"DEBUG: authors_str before normalize = {authors_str[:100]}...")
     # ── Normalise "2*and" / "2and" → "2* and " so the split below works ────────
     authors_str = re.sub(r'([\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§]+)\s*and\b', r'\1 and ', authors_str)
 
     # ── Split on commas AND "and" / "&" ──────────────────────────────────────
     raw_names = re.split(r',\s*|\s+and\s+|\s*&\s*', authors_str)
+    print(f"DEBUG: split resulted in {len(raw_names)} names")
 
     for name in raw_names:
         # Strip leading "and" artifacts from split, trailing superscripts/punctuation
