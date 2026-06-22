@@ -8,6 +8,31 @@ const DOC_MODES = [
   { value: "poster_abstracts", label: "Poster Abstract Collection", desc: "Conference poster abstracts in one document" },
 ];
 
+function saveToRecentDocuments(data, fileName, docMode) {
+  try {
+    const stored = localStorage.getItem("recentDocuments");
+    let documents = stored ? JSON.parse(stored) : [];
+
+    const docTypeLabel = DOC_MODES.find(m => m.value === docMode)?.label || docMode;
+
+    const newDoc = {
+      title: data.title || "Untitled",
+      docType: docTypeLabel,
+      fileName: fileName,
+      uploadDate: Date.now(),
+      version: 1,
+      data: data,
+    };
+
+    // Add to front and keep only last 10
+    documents = [newDoc, ...documents].slice(0, 10);
+    localStorage.setItem("recentDocuments", JSON.stringify(documents));
+    window.dispatchEvent(new Event("recentDocumentsSaved"));
+  } catch (e) {
+    console.error("Failed to save to recent documents", e);
+  }
+}
+
 export default function UploadScreen({ onParsed }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | parsing | done | error
@@ -68,6 +93,9 @@ export default function UploadScreen({ onParsed }) {
       } else {
         setWarnMsg("");
       }
+
+      // Save to recent documents
+      saveToRecentDocuments(data, file.name, docMode);
 
       onParsed(data);
     } catch (e) {

@@ -3,6 +3,7 @@ import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 
 import Header from "./components/Header.jsx";
+import RecentDocumentsPanel from "./components/RecentDocumentsPanel.jsx";
 import UploadScreen from "./screens/UploadScreen.jsx";
 import MetadataScreen from "./screens/MetadataScreen.jsx";
 import SectionsScreen from "./screens/SectionsScreen.jsx";
@@ -18,6 +19,7 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [article, setArticle] = useState(DRAFT || defaultArticle());
   const [abstractCollection, setAbstractCollection] = useState(null);
+  const [sourceData, setSourceData] = useState(null);
 
   const handleParsed = useCallback((parsed) => {
     // Abstract collection — go to dedicated screen
@@ -40,8 +42,33 @@ export default function App() {
       publisher_name: NFP_DEFAULTS.publisher_name,
       publisher_loc: NFP_DEFAULTS.publisher_loc,
     }));
+    setSourceData(null);
     setStep(2);
   }, []);
+
+  const handleSelectRecentDocument = useCallback((doc) => {
+    // Load the recent document's data
+    setArticle(doc.data);
+    setSourceData(doc.data);
+    // Jump to metadata screen
+    setStep(2);
+    toast.success("Loaded: " + doc.title);
+  }, []);
+
+  const handleRegenerateMetadata = useCallback(() => {
+    if (!sourceData) {
+      toast.error("No source data available");
+      return;
+    }
+    setArticle((prev) => ({
+      ...prev,
+      title: sourceData.title || prev.title,
+      authors: sourceData.authors?.length ? sourceData.authors : prev.authors,
+      abstract: sourceData.abstract || prev.abstract,
+      keywords: sourceData.keywords?.length ? sourceData.keywords : prev.keywords,
+    }));
+    toast.success("Metadata regenerated");
+  }, [sourceData]);
 
   const handleSaveDraft = () => {
     saveDraft(article);
@@ -66,7 +93,7 @@ export default function App() {
 
   const Screen = {
     1: <UploadScreen onParsed={handleParsed} />,
-    2: <MetadataScreen article={article} onChange={setArticle} onNext={() => setStep(3)} />,
+    2: <MetadataScreen article={article} onChange={setArticle} onNext={() => setStep(3)} onRegenerate={sourceData ? handleRegenerateMetadata : null} />,
     3: <SectionsScreen article={article} onChange={setArticle} onNext={() => setStep(4)} />,
     4: <ExportScreen article={article} />,
   }[step];
@@ -75,7 +102,10 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Toaster position="top-right" toastOptions={{ className: "text-sm font-medium", duration: 3000 }} />
       <Header currentStep={step} onStepClick={setStep} onSaveDraft={handleSaveDraft} />
-      <main className="flex-1">{Screen}</main>
+      <div className="flex-1 flex">
+        <main className="flex-1">{Screen}</main>
+        <RecentDocumentsPanel onSelectDocument={handleSelectRecentDocument} />
+      </div>
     </div>
   );
 }

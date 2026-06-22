@@ -55,7 +55,7 @@ function LogoUpload({ label, hint, value, onChange }) {
   );
 }
 
-export default function MetadataScreen({ article, onChange, onNext }) {
+export default function MetadataScreen({ article, onChange, onNext, onRegenerate }) {
   const [kwInput, setKwInput] = useState("");
 
   const set = (field, value) => onChange({ ...article, [field]: value });
@@ -107,7 +107,14 @@ export default function MetadataScreen({ article, onChange, onNext }) {
           <h2 className="text-2xl font-semibold text-[#0F3557]">Article Metadata</h2>
           <p className="text-slate-500 text-sm mt-1">Review and edit the extracted metadata.</p>
         </div>
-        <Button onClick={onNext}>Continue to Sections →</Button>
+        <div className="flex gap-2">
+          {onRegenerate && (
+            <Button variant="secondary" onClick={onRegenerate}>
+              ↻ Regenerate
+            </Button>
+          )}
+          <Button onClick={onNext}>Continue to Sections →</Button>
+        </div>
       </div>
 
       {/* Article basics */}
