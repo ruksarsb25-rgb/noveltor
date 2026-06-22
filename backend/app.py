@@ -459,8 +459,9 @@ def export_word():
         # Affiliations
         affiliations = data.get("affiliations", [])
         for aff in affiliations:
-            if aff.strip():
-                aff_para = doc.add_paragraph(aff)
+            aff_text = aff.get("text", aff) if isinstance(aff, dict) else aff
+            if aff_text and str(aff_text).strip():
+                aff_para = doc.add_paragraph(str(aff_text).strip())
                 aff_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph()  # Spacing
@@ -473,17 +474,23 @@ def export_word():
         # Sections
         sections = data.get("sections", [])
         for sec in sections:
-            if sec.get("title"):
-                doc.add_heading(sec["title"], level=2)
-            if sec.get("content"):
-                doc.add_paragraph(sec["content"])
+            sec_title = sec.get("title") if isinstance(sec, dict) else sec
+            if sec_title:
+                doc.add_heading(str(sec_title), level=2)
+            sec_content = sec.get("content") if isinstance(sec, dict) else None
+            if sec_content:
+                content_text = sec_content if isinstance(sec_content, str) else str(sec_content)
+                doc.add_paragraph(content_text)
 
         # References
         references = data.get("references", [])
         if references:
             doc.add_heading("References", level=2)
             for i, ref in enumerate(references, 1):
-                ref_text = ref.get("text", "")
+                if isinstance(ref, dict):
+                    ref_text = ref.get("text", "")
+                else:
+                    ref_text = str(ref) if ref else ""
                 if ref_text:
                     doc.add_paragraph(f"{i}. {ref_text}", style="List Number")
 
