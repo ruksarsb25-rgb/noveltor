@@ -478,79 +478,97 @@ def export_word():
             doc.add_paragraph(data["abstract"])
             doc.add_paragraph()
 
+        def add_content_block(block):
+            """Helper to add a single content block to the document."""
+            if not isinstance(block, dict):
+                return
+
+            block_type = block.get("type")
+
+            # Paragraph block
+            if block_type == "paragraph":
+                text = block.get("text", "")
+                if text:
+                    doc.add_paragraph(text)
+
+            # Figure/Image block
+            elif block_type == "figure":
+                data_uri = block.get("data_uri", "")
+                if data_uri and data_uri.startswith("data:image"):
+                    try:
+                        b64_data = data_uri.split(",")[1]
+                        img_data = base64.b64decode(b64_data)
+                        img_stream = BytesIO(img_data)
+                        doc.add_picture(img_stream, width=Inches(5.5))
+                    except Exception:
+                        pass
+                label = block.get("label", "Figure")
+                caption = block.get("caption", "")
+                if label or caption:
+                    fig_text = f"{label}. {caption}" if caption else label
+                    fig_para = doc.add_paragraph(fig_text)
+                    if fig_para.runs:
+                        fig_para.runs[0].italic = True
+                    fig_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # Table block
+            elif block_type == "table":
+                headers = block.get("headers", [])
+                rows = block.get("rows", [])
+                if headers or rows:
+                    num_cols = len(headers) if headers else (len(rows[0]) if rows else 1)
+                    num_rows = len(rows) + (1 if headers else 0)
+                    table = doc.add_table(rows=num_rows, cols=num_cols)
+                    table.style = "Light Grid Accent 1"
+                    if headers:
+                        for i, h in enumerate(headers):
+                            if i < len(table.rows[0].cells):
+                                table.rows[0].cells[i].text = str(h or "")
+                    for r_idx, row in enumerate(rows):
+                        row_offset = 1 if headers else 0
+                        if r_idx + row_offset < len(table.rows):
+                            for c_idx, cell in enumerate(row):
+                                if c_idx < len(table.rows[r_idx + row_offset].cells):
+                                    table.rows[r_idx + row_offset].cells[c_idx].text = str(cell or "")
+
+            # Equation block
+            elif block_type == "equation":
+                data_uri = block.get("data_uri", "")
+                if data_uri and data_uri.startswith("data:image"):
+                    try:
+                        b64_data = data_uri.split(",")[1]
+                        img_data = base64.b64decode(b64_data)
+                        img_stream = BytesIO(img_data)
+                        doc.add_picture(img_stream, width=Inches(4.0))
+                        last_para = doc.paragraphs[-1]
+                        last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+
         # Sections with formatted content
         sections = data.get("sections", [])
         for sec in sections:
-            sec_title = sec.get("title") if isinstance(sec, dict) else sec
+            sec_title = sec.get("heading") or sec.get("title") if isinstance(sec, dict) else sec
             if sec_title:
                 doc.add_heading(str(sec_title), level=2)
 
-            # Handle content blocks (paragraph, table, figure, equation)
+            # Handle top-level content blocks
             content = sec.get("content") if isinstance(sec, dict) else None
             if content and isinstance(content, list):
                 for block in content:
-                    if not isinstance(block, dict):
-                        continue
+                    add_content_block(block)
 
-                    block_type = block.get("type")
+            # Handle subsections
+            subsections = sec.get("subsections", []) if isinstance(sec, dict) else []
+            for subsec in subsections:
+                subsec_title = subsec.get("heading", "") if isinstance(subsec, dict) else ""
+                if subsec_title:
+                    doc.add_heading(str(subsec_title), level=3)
 
-                    # Paragraph block
-                    if block_type == "paragraph":
-                        text = block.get("text", "")
-                        if text:
-                            doc.add_paragraph(text)
-
-                    # Figure/Image block
-                    elif block_type == "figure":
-                        data_uri = block.get("data_uri", "")
-                        if data_uri and data_uri.startswith("data:image"):
-                            try:
-                                # Extract base64 data
-                                b64_data = data_uri.split(",")[1]
-                                img_data = base64.b64decode(b64_data)
-                                img_stream = BytesIO(img_data)
-                                doc.add_picture(img_stream, width=Inches(5.5))
-                            except Exception:
-                                pass
-                        # Add figure label and caption
-                        label = block.get("label", "Figure")
-                        caption = block.get("caption", "")
-                        if label or caption:
-                            fig_text = f"{label}. {caption}" if caption else label
-                            fig_para = doc.add_paragraph(fig_text)
-                            fig_para.runs[0].italic = True
-                            fig_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-                    # Table block
-                    elif block_type == "table":
-                        headers = block.get("headers", [])
-                        rows = block.get("rows", [])
-                        if headers or rows:
-                            table = doc.add_table(rows=len(rows) + (1 if headers else 0), cols=len(headers) or (len(rows[0]) if rows else 1))
-                            table.style = "Light Grid Accent 1"
-                            # Add headers
-                            if headers:
-                                for i, h in enumerate(headers):
-                                    table.rows[0].cells[i].text = str(h or "")
-                            # Add rows
-                            for r_idx, row in enumerate(rows):
-                                for c_idx, cell in enumerate(row):
-                                    if c_idx < len(table.rows[r_idx + (1 if headers else 0)].cells):
-                                        table.rows[r_idx + (1 if headers else 0)].cells[c_idx].text = str(cell or "")
-
-                    # Equation block
-                    elif block_type == "equation":
-                        data_uri = block.get("data_uri", "")
-                        if data_uri and data_uri.startswith("data:image"):
-                            try:
-                                b64_data = data_uri.split(",")[1]
-                                img_data = base64.b64decode(b64_data)
-                                img_stream = BytesIO(img_data)
-                                doc.add_picture(img_stream, width=Inches(4.0))
-                                last_para = doc.paragraphs[-1]
-                                last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            except Exception:
-                                pass
+                subsec_content = subsec.get("content", []) if isinstance(subsec, dict) else []
+                if subsec_content and isinstance(subsec_content, list):
+                    for block in subsec_content:
+                        add_content_block(block)
 
         doc.add_paragraph()  # Spacing
 
