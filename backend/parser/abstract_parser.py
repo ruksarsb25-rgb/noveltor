@@ -19,7 +19,7 @@ _ABSTRACT_LABEL_RE  = re.compile(r'^abstract\s*[:\-]?\s*$', re.IGNORECASE)
 _ABSTRACT_PACKED_RE = re.compile(r'^abstract\s*[:\-]?\s*\n', re.IGNORECASE)
 _EMAIL_RE           = re.compile(r'[\w.+-]+@[\w.-]+\.\w+')
 _CORRESP_RE         = re.compile(r'(corresponding\s+author|e[\-\s]?mail\s*:)', re.IGNORECASE)
-_AFFIL_NUM_RE       = re.compile(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§abcde]+[\s\.\)\,]')
+_AFFIL_NUM_RE       = re.compile(r'^[\d¹²³⁴⁵⁶⁷⁸⁹⁰*†‡§abcde]+(?=\s|[A-Z]|\.|\)|,|$)')
 
 BACK_LIMIT = 20   # paragraphs to scan backward from an Abstract label
 
@@ -102,8 +102,13 @@ def _parse_author_block(raw_lines: list) -> dict:
         elif not authors_str:
             authors_str = line
         else:
-            # Could be a continuation affiliation line
-            affiliations.append(line)
+            # Check if line looks like continuation of author names or an affiliation
+            # If line contains commas/and and doesn't start with institution keyword, treat as author line
+            if (',' in line or ' and ' in line.lower() or ' & ' in line) and not _INST_RE.search(line.split(',')[0]):
+                authors_str = authors_str + " " + line
+            else:
+                # Affiliation line
+                affiliations.append(line)
 
     # ── Strip institution text appended after the last author ─────────────────
     # e.g. "Smith J, Jones A* Department of Chemistry, Univ of X, India"
