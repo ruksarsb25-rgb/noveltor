@@ -426,10 +426,16 @@ def export_pdf():
 
 @app.route("/export/word", methods=["POST"])
 def export_word():
-    """Export article as Microsoft Word (.docx) file"""
+    """Export article as Microsoft Word (.docx) file with full formatting"""
     from docx import Document
     from docx.shared import Pt, RGBColor, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.shared import OxmlElement
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    import base64
+    from io import BytesIO
+    from PIL import Image
 
     data = request.get_json(force=True)
     if not data:
@@ -470,17 +476,83 @@ def export_word():
         if data.get("abstract"):
             doc.add_heading("Abstract", level=2)
             doc.add_paragraph(data["abstract"])
+            doc.add_paragraph()
 
-        # Sections
+        # Sections with formatted content
         sections = data.get("sections", [])
         for sec in sections:
             sec_title = sec.get("title") if isinstance(sec, dict) else sec
             if sec_title:
                 doc.add_heading(str(sec_title), level=2)
-            sec_content = sec.get("content") if isinstance(sec, dict) else None
-            if sec_content:
-                content_text = sec_content if isinstance(sec_content, str) else str(sec_content)
-                doc.add_paragraph(content_text)
+
+            # Handle content blocks (paragraph, table, figure, equation)
+            content = sec.get("content") if isinstance(sec, dict) else None
+            if content and isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+
+                    block_type = block.get("type")
+
+                    # Paragraph block
+                    if block_type == "paragraph":
+                        text = block.get("text", "")
+                        if text:
+                            doc.add_paragraph(text)
+
+                    # Figure/Image block
+                    elif block_type == "figure":
+                        data_uri = block.get("data_uri", "")
+                        if data_uri and data_uri.startswith("data:image"):
+                            try:
+                                # Extract base64 data
+                                b64_data = data_uri.split(",")[1]
+                                img_data = base64.b64decode(b64_data)
+                                img_stream = BytesIO(img_data)
+                                doc.add_picture(img_stream, width=Inches(5.5))
+                            except Exception:
+                                pass
+                        # Add figure label and caption
+                        label = block.get("label", "Figure")
+                        caption = block.get("caption", "")
+                        if label or caption:
+                            fig_text = f"{label}. {caption}" if caption else label
+                            fig_para = doc.add_paragraph(fig_text)
+                            fig_para.runs[0].italic = True
+                            fig_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                    # Table block
+                    elif block_type == "table":
+                        headers = block.get("headers", [])
+                        rows = block.get("rows", [])
+                        if headers or rows:
+                            table = doc.add_table(rows=len(rows) + (1 if headers else 0), cols=len(headers) or (len(rows[0]) if rows else 1))
+                            table.style = "Light Grid Accent 1"
+                            # Add headers
+                            if headers:
+                                for i, h in enumerate(headers):
+                                    table.rows[0].cells[i].text = str(h or "")
+                            # Add rows
+                            for r_idx, row in enumerate(rows):
+                                for c_idx, cell in enumerate(row):
+                                    if c_idx < len(table.rows[r_idx + (1 if headers else 0)].cells):
+                                        table.rows[r_idx + (1 if headers else 0)].cells[c_idx].text = str(cell or "")
+
+                    # Equation block
+                    elif block_type == "equation":
+                        data_uri = block.get("data_uri", "")
+                        if data_uri and data_uri.startswith("data:image"):
+                            try:
+                                b64_data = data_uri.split(",")[1]
+                                img_data = base64.b64decode(b64_data)
+                                img_stream = BytesIO(img_data)
+                                doc.add_picture(img_stream, width=Inches(4.0))
+                                last_para = doc.paragraphs[-1]
+                                last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            except Exception:
+                                pass
+
+        doc.add_paragraph()  # Spacing
 
         # References
         references = data.get("references", [])
