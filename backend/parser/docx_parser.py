@@ -832,10 +832,15 @@ def _split_author_line(line: str) -> list:
     Returns a list of author dicts with a temporary '_sup' key holding
     the normalised affiliation number string.
     """
+    print(f"DEBUG _split_author_line: input = {line[:100]}...")
     parts = _AUTHOR_MARKER_RE.split(line)
+    print(f"DEBUG _split_author_line: split into {len(parts)} parts")
+    for idx, p in enumerate(parts[:10]):
+        print(f"  parts[{idx}] = {p[:60]}...")
 
     # No markers found — fall back to simple comma split
     if len(parts) == 1:
+        print("DEBUG: No markers found, using fallback comma split")
         return _fallback_comma_split(line)
 
     authors = []
@@ -850,6 +855,7 @@ def _split_author_line(line: str) -> list:
         is_corresp = '*' in marker
 
         first, last = _split_name(name_raw)
+        print(f"DEBUG: Author {i//2 + 1}: first='{first}' last='{last}' sup='{sup_num}' corresp={is_corresp}")
         authors.append({
             "first_name": first,
             "last_name": last,
@@ -860,6 +866,7 @@ def _split_author_line(line: str) -> list:
             "_sup": sup_num,
         })
 
+    print(f"DEBUG: _split_author_line returning {len(authors)} authors")
     return authors or _fallback_comma_split(line)
 
 
@@ -938,11 +945,14 @@ def _find_corresp_emails(lines: list) -> list:
 
 def _fallback_comma_split(line: str) -> list:
     """Simple comma split used when no superscript markers are detected."""
+    print(f"DEBUG _fallback_comma_split: input = {line[:100]}...")
     names = [n.strip() for n in line.split(',') if n.strip()]
+    print(f"DEBUG _fallback_comma_split: split into {len(names)} names on commas")
     result = []
     for i, name in enumerate(names):
         name_clean = re.sub(r'[¹²³⁴⁵⁶⁷⁸⁹⁰\d*]', '', name).strip()
         first, last = _split_name(name_clean)
+        print(f"DEBUG: Fallback Author {i+1}: raw='{name}' clean='{name_clean}' first='{first}' last='{last}'")
         result.append({
             "first_name": first,
             "last_name": last,
@@ -952,6 +962,7 @@ def _fallback_comma_split(line: str) -> list:
             "corresponding": i == 0,
             "_sup": str(i + 1),
         })
+    print(f"DEBUG _fallback_comma_split: returning {len(result)} authors")
     return result
 
 
