@@ -466,18 +466,22 @@ def export_word():
                 authors_para = doc.add_paragraph(", ".join(author_names))
                 authors_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        # Collect unique affiliations from authors
+        unique_affiliations = {}
+        for a in authors:
+            aff = a.get("affiliation", "").strip()
+            if aff and aff not in unique_affiliations:
+                unique_affiliations[aff] = len(unique_affiliations) + 1
+
         # Numbered affiliations
-        affiliations = data.get("affiliations", [])
-        if affiliations:
-            for i, aff in enumerate(affiliations, 1):
-                aff_text = aff.get("text", aff) if isinstance(aff, dict) else aff
-                if aff_text and str(aff_text).strip():
-                    aff_para = doc.add_paragraph()
-                    aff_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    # Add superscript number
-                    run = aff_para.add_run(f"{i}")
-                    run.font.superscript = True
-                    aff_para.add_run(str(aff_text).strip())
+        if unique_affiliations:
+            for aff_text, aff_num in sorted(unique_affiliations.items(), key=lambda x: x[1]):
+                aff_para = doc.add_paragraph()
+                aff_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # Add superscript number
+                run = aff_para.add_run(f"{aff_num}")
+                run.font.superscript = True
+                aff_para.add_run(aff_text)
 
         # Corresponding author and email
         corresp_author = None
@@ -494,7 +498,9 @@ def export_word():
 
         if corresp_author or corresp_emails:
             corresp_para = doc.add_paragraph()
-            corresp_para.add_run("Corresponding author: ").bold = True
+            corresp_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            corresp_run = corresp_para.add_run("Corresponding author: ")
+            corresp_run.bold = True
             if corresp_author:
                 corresp_para.add_run(corresp_author)
             if corresp_emails:
