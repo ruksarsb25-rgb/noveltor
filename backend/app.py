@@ -449,26 +449,56 @@ def export_word():
         title_para = doc.add_paragraph(title, style="Heading 1")
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Authors
+        # Authors with affiliations
         authors = data.get("authors", [])
         if authors:
+            # Author line with superscript affiliation numbers
             author_names = []
             for a in authors:
                 name_parts = [a.get("first_name", ""), a.get("last_name", "")]
                 name = " ".join([p for p in name_parts if p]).strip()
+                # Add superscript affiliation marker if available
+                affil = a.get("affiliation", "")
                 if name:
                     author_names.append(name)
+
             if author_names:
                 authors_para = doc.add_paragraph(", ".join(author_names))
                 authors_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Affiliations
+        # Numbered affiliations
         affiliations = data.get("affiliations", [])
-        for aff in affiliations:
-            aff_text = aff.get("text", aff) if isinstance(aff, dict) else aff
-            if aff_text and str(aff_text).strip():
-                aff_para = doc.add_paragraph(str(aff_text).strip())
-                aff_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if affiliations:
+            for i, aff in enumerate(affiliations, 1):
+                aff_text = aff.get("text", aff) if isinstance(aff, dict) else aff
+                if aff_text and str(aff_text).strip():
+                    aff_para = doc.add_paragraph()
+                    aff_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    # Add superscript number
+                    run = aff_para.add_run(f"{i}")
+                    run.font.superscript = True
+                    aff_para.add_run(str(aff_text).strip())
+
+        # Corresponding author and email
+        corresp_author = None
+        corresp_emails = []
+        for a in authors:
+            if a.get("corresponding"):
+                name_parts = [a.get("first_name", ""), a.get("last_name", "")]
+                name = " ".join([p for p in name_parts if p]).strip()
+                if name:
+                    corresp_author = name
+                email = a.get("email", "")
+                if email:
+                    corresp_emails.append(email)
+
+        if corresp_author or corresp_emails:
+            corresp_para = doc.add_paragraph()
+            corresp_para.add_run("Corresponding author: ").bold = True
+            if corresp_author:
+                corresp_para.add_run(corresp_author)
+            if corresp_emails:
+                corresp_para.add_run(f" ({', '.join(corresp_emails)})")
 
         doc.add_paragraph()  # Spacing
 
