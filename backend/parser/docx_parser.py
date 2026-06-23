@@ -14,7 +14,8 @@ _EMAIL_RE = re.compile(r'[\w.+-]+@[\w.-]+\.\w+')
 _CORRESP_LINE_RE = re.compile(r'\*?\s*corresponding\s+authors?\s*[:\-]', re.IGNORECASE)
 
 # Matches Unicode superscript runs OR digits glued directly to a letter (regular superscripts)
-_AUTHOR_MARKER_RE = re.compile(r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+,?\*?|(?<=[A-Za-z])\d+,?\*?)')
+# Updated to also match asterisks before digits (like N*1, N*2) and after (like R3*, R4*)
+_AUTHOR_MARKER_RE = re.compile(r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+,?\*?|(?<=[A-Za-z])\*?\d+,?\*?)')
 
 # Heading / structure detection
 # Numbered heading: "1. Introduction", "2.1 Chemicals", "3.2.1 Sub" — must start capital after number
