@@ -538,6 +538,8 @@ def export_word():
         title = data.get("title", "Untitled")
         title_para = doc.add_paragraph(title, style="Heading 1")
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_para.paragraph_format.space_after = Pt(12)
+        title_para.paragraph_format.line_spacing = 1.5
 
         # Authors with affiliations
         authors = data.get("authors", [])
@@ -555,6 +557,8 @@ def export_word():
             if author_names:
                 authors_para = doc.add_paragraph(", ".join(author_names))
                 authors_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                authors_para.paragraph_format.space_after = Pt(6)
+                authors_para.paragraph_format.line_spacing = 1.15
 
         # Collect unique affiliations from authors
         unique_affiliations = {}
@@ -600,9 +604,13 @@ def export_word():
 
         # Abstract
         if data.get("abstract"):
-            doc.add_heading("Abstract", level=2)
-            doc.add_paragraph(data["abstract"])
-            doc.add_paragraph()
+            abstract_heading = doc.add_heading("Abstract", level=2)
+            abstract_heading.paragraph_format.space_before = Pt(12)
+            abstract_heading.paragraph_format.space_after = Pt(6)
+            abstract_para = doc.add_paragraph(data["abstract"])
+            abstract_para.paragraph_format.space_after = Pt(12)
+            abstract_para.paragraph_format.line_spacing = 1.5
+            doc.add_paragraph()  # Spacing
 
         def add_content_block(block):
             """Helper to add a single content block to the document."""
@@ -615,7 +623,9 @@ def export_word():
             if block_type == "paragraph":
                 text = block.get("text", "")
                 if text:
-                    doc.add_paragraph(text)
+                    para = doc.add_paragraph(text)
+                    para.paragraph_format.line_spacing = 1.5
+                    para.paragraph_format.space_after = Pt(6)
 
             # Figure/Image block
             elif block_type == "figure":
@@ -657,56 +667,65 @@ def export_word():
                                 if c_idx < len(table.rows[r_idx + row_offset].cells):
                                     table.rows[r_idx + row_offset].cells[c_idx].text = str(cell or "")
 
-            # Equation block - OMML for Word, MathML stored for compatibility
+            # Equation block - Image first, then text fallback
             elif block_type == "equation":
                 omml = block.get("omml", "")
                 eq_text = block.get("text", "")
                 data_uri = block.get("data_uri", "")
-
                 eq_added = False
 
-                # Try OMML first
-                if omml:
-                    try:
-                        # Insert OMML equation directly into Word document (copyable/editable)
-                        p = doc.add_paragraph()
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        r = p.add_run()
-                        omml_elem = parse_xml(f'<w:r {nsdecls("w", "m")}>{omml}</w:r>')
-                        r._element.getparent().replace(r._element, omml_elem)
-                        eq_added = True
-                    except Exception as e:
-                        print(f"Warning: OMML insertion failed: {e}")
-
-                # Try image if OMML failed
-                if not eq_added and data_uri and data_uri.startswith("data:image"):
+                # Try image first (most reliable)
+                if data_uri and data_uri.startswith("data:image"):
                     try:
                         b64_data = data_uri.split(",")[1]
                         img_data = base64.b64decode(b64_data)
                         img_stream = BytesIO(img_data)
                         eq_para = doc.add_paragraph()
                         eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        eq_para.paragraph_format.space_before = Pt(6)
+                        eq_para.paragraph_format.space_after = Pt(6)
                         run = eq_para.add_run()
                         run.add_picture(img_stream, width=Inches(4.0))
                         eq_added = True
+                        print(f"✓ Equation image inserted successfully")
                     except Exception as e:
-                        print(f"Warning: Equation image insertion failed: {e}")
+                        print(f"⚠ Equation image insertion failed: {e}")
 
-                # Try text if image failed
+                # Try OMML if image failed
+                if not eq_added and omml:
+                    try:
+                        p = doc.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p.paragraph_format.space_before = Pt(6)
+                        p.paragraph_format.space_after = Pt(6)
+                        r = p.add_run()
+                        omml_elem = parse_xml(f'<w:r {nsdecls("w", "m")}>{omml}</w:r>')
+                        r._element.getparent().replace(r._element, omml_elem)
+                        eq_added = True
+                        print(f"✓ Equation OMML inserted successfully")
+                    except Exception as e:
+                        print(f"⚠ OMML insertion failed: {e}")
+
+                # Fallback to text
                 if not eq_added and eq_text:
                     try:
                         eq_para = doc.add_paragraph(eq_text)
                         eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        eq_para.paragraph_format.space_before = Pt(6)
+                        eq_para.paragraph_format.space_after = Pt(6)
                         eq_added = True
+                        print(f"✓ Equation text fallback used")
                     except Exception as e:
-                        print(f"Warning: Equation text insertion failed: {e}")
+                        print(f"⚠ Equation text insertion failed: {e}")
 
         # Sections with formatted content
         sections = data.get("sections", [])
         for sec in sections:
             sec_title = sec.get("heading") or sec.get("title") if isinstance(sec, dict) else sec
             if sec_title:
-                doc.add_heading(str(sec_title), level=2)
+                sec_heading = doc.add_heading(str(sec_title), level=2)
+                sec_heading.paragraph_format.space_before = Pt(12)
+                sec_heading.paragraph_format.space_after = Pt(6)
 
             # Handle top-level content blocks
             content = sec.get("content") if isinstance(sec, dict) else None
@@ -719,7 +738,9 @@ def export_word():
             for subsec in subsections:
                 subsec_title = subsec.get("heading", "") if isinstance(subsec, dict) else ""
                 if subsec_title:
-                    doc.add_heading(str(subsec_title), level=3)
+                    subsec_heading = doc.add_heading(str(subsec_title), level=3)
+                    subsec_heading.paragraph_format.space_before = Pt(12)
+                    subsec_heading.paragraph_format.space_after = Pt(6)
 
                 subsec_content = subsec.get("content", []) if isinstance(subsec, dict) else []
                 if subsec_content and isinstance(subsec_content, list):
@@ -732,7 +753,9 @@ def export_word():
         references = data.get("references", [])
         if references:
             doc.add_paragraph()  # Spacing before references
-            doc.add_heading("References", level=2)
+            ref_heading = doc.add_heading("References", level=2)
+            ref_heading.paragraph_format.space_before = Pt(12)
+            ref_heading.paragraph_format.space_after = Pt(6)
             ref_count = 0
             for i, ref in enumerate(references, 1):
                 # Extract reference text
