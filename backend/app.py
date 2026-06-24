@@ -432,7 +432,7 @@ def export_word():
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.shared import OxmlElement
     from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
+    from docx.oxml.ns import nsdecls, qn
     import base64
     from io import BytesIO
     from PIL import Image
@@ -443,6 +443,96 @@ def export_word():
 
     try:
         doc = Document()
+
+        # Header with journal info
+        journal_name = data.get("journal_name", "Novel Future Publishing")
+        publisher_name = data.get("publisher_name", "")
+
+        header_table = doc.add_table(rows=1, cols=3)
+        header_table.autofit = False
+        header_table.allow_autofit = False
+
+        # Set column widths
+        for cell in header_table.rows[0].cells:
+            cell.width = Inches(1.8)
+
+        # Left cell - Journal initials or logo
+        left_cell = header_table.rows[0].cells[0]
+        left_para = left_cell.paragraphs[0]
+        initials = "".join(w[0].upper() for w in journal_name.split()[:2]) or "NP"
+        left_run = left_para.add_run(initials)
+        left_run.font.size = Pt(32)
+        left_run.font.bold = True
+        left_run.font.color.rgb = RGBColor(15, 53, 87)  # Navy
+        left_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Center cell - Journal name
+        center_cell = header_table.rows[0].cells[1]
+        center_cell.paragraphs[0].clear()
+        center_para = center_cell.paragraphs[0]
+        center_run = center_para.add_run("From the journal:\n")
+        center_run.font.size = Pt(8)
+        center_run.font.color.rgb = RGBColor(128, 128, 128)
+        journal_run = center_para.add_run(journal_name)
+        journal_run.font.size = Pt(14)
+        journal_run.font.bold = True
+        journal_run.font.color.rgb = RGBColor(15, 53, 87)
+        center_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Right cell - Publisher/Logo placeholder
+        right_cell = header_table.rows[0].cells[2]
+        right_cell.paragraphs[0].clear()
+        right_para = right_cell.paragraphs[0]
+        if publisher_name:
+            right_run = right_para.add_run(publisher_name)
+            right_run.font.size = Pt(10)
+            right_run.font.bold = True
+        right_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+        # Remove table borders for cleaner look
+        tbl = header_table._element
+        tblPr = tbl.tblPr
+        if tblPr is None:
+            tblPr = OxmlElement('w:tblPr')
+            tbl.insert(0, tblPr)
+        tblBorders = OxmlElement('w:tblBorders')
+        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'none')
+            border.set(qn('w:sz'), '0')
+            border.set(qn('w:space'), '0')
+            border.set(qn('w:color'), 'auto')
+            tblBorders.append(border)
+        tblPr.append(tblBorders)
+
+        # Add horizontal rule
+        hr_para = doc.add_paragraph()
+        hr_para.paragraph_format.space_before = Pt(6)
+        hr_para.paragraph_format.space_after = Pt(12)
+        pPr = hr_para._element.get_or_add_pPr()
+        pBdr = OxmlElement('w:pBdr')
+        bottom = OxmlElement('w:bottom')
+        bottom.set(qn('w:val'), 'single')
+        bottom.set(qn('w:sz'), '24')  # 3pt
+        bottom.set(qn('w:space'), '1')
+        bottom.set(qn('w:color'), '0F3557')
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+
+        # Article type badge
+        article_type = data.get("article_type", "Research Article")
+        badge_para = doc.add_paragraph()
+        badge_run = badge_para.add_run(article_type.upper())
+        badge_run.font.size = Pt(9)
+        badge_run.font.bold = True
+        badge_run.font.color.rgb = RGBColor(255, 255, 255)
+        shading_elm = OxmlElement('w:shd')
+        shading_elm.set(qn('w:fill'), '0F3557')
+        badge_para._element.get_or_add_pPr().append(shading_elm)
+        badge_para.paragraph_format.left_indent = Inches(0)
+        badge_para.paragraph_format.right_indent = Inches(0)
+        badge_para.paragraph_format.space_before = Pt(6)
+        badge_para.paragraph_format.space_after = Pt(12)
 
         # Title
         title = data.get("title", "Untitled")
