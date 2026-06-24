@@ -444,9 +444,11 @@ def export_word():
     try:
         doc = Document()
 
-        # Header with journal info
+        # Header with journal info and logos
         journal_name = data.get("journal_name", "Novel Future Publishing")
         publisher_name = data.get("publisher_name", "")
+        journal_logo = data.get("journal_logo", "")  # Logo image from metadata
+        publisher_logo = data.get("publisher_logo", "")  # Publisher logo from metadata
 
         header_table = doc.add_table(rows=1, cols=3)
         header_table.autofit = False
@@ -456,15 +458,33 @@ def export_word():
         for cell in header_table.rows[0].cells:
             cell.width = Inches(1.8)
 
-        # Left cell - Journal initials or logo
+        # Left cell - Journal logo (or initials fallback)
         left_cell = header_table.rows[0].cells[0]
+        left_cell.paragraphs[0].clear()
         left_para = left_cell.paragraphs[0]
-        initials = "".join(w[0].upper() for w in journal_name.split()[:2]) or "NP"
-        left_run = left_para.add_run(initials)
-        left_run.font.size = Pt(32)
-        left_run.font.bold = True
-        left_run.font.color.rgb = RGBColor(15, 53, 87)  # Navy
         left_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        if journal_logo and journal_logo.startswith("data:image"):
+            try:
+                # Extract and insert logo image
+                b64_data = journal_logo.split(",")[1]
+                logo_data = base64.b64decode(b64_data)
+                logo_stream = BytesIO(logo_data)
+                left_para.add_run().add_picture(logo_stream, width=Inches(1.2))
+            except Exception as e:
+                print(f"⚠ Journal logo insert failed: {e}, using initials")
+                initials = "".join(w[0].upper() for w in journal_name.split()[:2]) or "NP"
+                left_run = left_para.add_run(initials)
+                left_run.font.size = Pt(32)
+                left_run.font.bold = True
+                left_run.font.color.rgb = RGBColor(15, 53, 87)
+        else:
+            # Fallback to initials
+            initials = "".join(w[0].upper() for w in journal_name.split()[:2]) or "NP"
+            left_run = left_para.add_run(initials)
+            left_run.font.size = Pt(32)
+            left_run.font.bold = True
+            left_run.font.color.rgb = RGBColor(15, 53, 87)
 
         # Center cell - Journal name
         center_cell = header_table.rows[0].cells[1]
@@ -479,15 +499,31 @@ def export_word():
         journal_run.font.color.rgb = RGBColor(15, 53, 87)
         center_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Right cell - Publisher/Logo placeholder
+        # Right cell - Publisher logo (or name fallback)
         right_cell = header_table.rows[0].cells[2]
         right_cell.paragraphs[0].clear()
         right_para = right_cell.paragraphs[0]
-        if publisher_name:
-            right_run = right_para.add_run(publisher_name)
-            right_run.font.size = Pt(10)
-            right_run.font.bold = True
         right_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+        if publisher_logo and publisher_logo.startswith("data:image"):
+            try:
+                # Extract and insert publisher logo image
+                b64_data = publisher_logo.split(",")[1]
+                logo_data = base64.b64decode(b64_data)
+                logo_stream = BytesIO(logo_data)
+                right_para.add_run().add_picture(logo_stream, width=Inches(1.5))
+            except Exception as e:
+                print(f"⚠ Publisher logo insert failed: {e}, using text")
+                if publisher_name:
+                    right_run = right_para.add_run(publisher_name)
+                    right_run.font.size = Pt(10)
+                    right_run.font.bold = True
+        else:
+            # Fallback to text
+            if publisher_name:
+                right_run = right_para.add_run(publisher_name)
+                right_run.font.size = Pt(10)
+                right_run.font.bold = True
 
         # Remove table borders for cleaner look
         tbl = header_table._element
