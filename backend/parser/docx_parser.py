@@ -6,6 +6,7 @@ import re
 import html as _html_lib
 from docx import Document
 from docx.oxml.ns import qn as _qn
+from utils.equations import extract_equation_text, mathml_from_omml
 
 # Translate Unicode superscript digits → ASCII digits
 _SUP_TO_NUM = str.maketrans('¹²³⁴⁵⁶⁷⁸⁹⁰', '1234567890')
@@ -296,14 +297,24 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             # Also create image for display
             data_uri = _math_para_to_image(p)
 
+            # Extract equation text and convert to MathML
+            eq_text = extract_equation_text(omml) if omml else ""
+            mathml = mathml_from_omml(omml) if omml else ""
+
             if current_section is None:
                 current_section = _new_section("", "Other")
             target = (current_section["subsections"][-1]["content"]
                       if current_section["subsections"] else current_section["content"])
 
             if omml:
-                # Store OMML for proper Word equation format (copyable)
-                target.append({"type": "equation", "omml": omml, "data_uri": data_uri if data_uri else None})
+                # Store OMML, MathML, text, and image for all export formats
+                target.append({
+                    "type": "equation",
+                    "omml": omml,
+                    "mathml": mathml,
+                    "text": eq_text,
+                    "data_uri": data_uri if data_uri else None
+                })
             elif data_uri:
                 target.append({"type": "equation", "data_uri": data_uri})
             else:
