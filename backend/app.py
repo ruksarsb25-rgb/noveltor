@@ -757,10 +757,15 @@ def export_word():
             ref_heading.paragraph_format.space_before = Pt(12)
             ref_heading.paragraph_format.space_after = Pt(6)
             ref_count = 0
-            for i, ref in enumerate(references, 1):
-                # Extract reference text
+
+            for ref in references:
+                # Extract reference text - handle multiple formats
+                ref_text = ""
                 if isinstance(ref, dict):
-                    ref_text = ref.get("text", "")
+                    # Parser format: {"number": i, "raw_text": text, "doi": doi}
+                    ref_text = ref.get("raw_text") or ref.get("text", "")
+                elif isinstance(ref, str):
+                    ref_text = ref.strip()
                 else:
                     ref_text = str(ref).strip() if ref else ""
 
@@ -769,15 +774,24 @@ def export_word():
                     continue
 
                 ref_count += 1
-                # Add numbered reference paragraph
-                ref_para = doc.add_paragraph(f"{ref_text}", style="List Number")
+                # Add numbered reference paragraph with proper indentation
+                ref_para = doc.add_paragraph()
                 ref_para.paragraph_format.left_indent = Inches(0.5)
                 ref_para.paragraph_format.first_line_indent = Inches(-0.5)
+                ref_para.paragraph_format.space_after = Pt(6)
+                ref_para.paragraph_format.line_spacing = 1.15
+
+                # Add number and text
+                num_run = ref_para.add_run(f"{ref_count}. ")
+                num_run.bold = True
+                ref_para.add_run(ref_text)
 
             if ref_count == 0:
                 # No valid references found
                 ref_para = doc.add_paragraph("No references provided")
                 ref_para.runs[0].italic = True
+        else:
+            print("⚠ WARNING: No references found in parsed data!")
 
         # Generate file
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", title)[:60].strip("_") or "article"

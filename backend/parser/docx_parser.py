@@ -291,7 +291,8 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 break
 
         # ── OMML equation detection (before blank-text skip) ─────────────────
-        if phase == "body" and _has_math(p._element):
+        # Detect equations in ANY phase, but handle specially for pre-body
+        if _has_math(p._element):
             # Extract OMML for copyable equations in Word
             omml = _extract_omml(p._element)
             # Also create image for display
