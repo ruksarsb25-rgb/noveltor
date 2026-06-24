@@ -660,50 +660,46 @@ def export_word():
             # Equation block - OMML for Word, MathML stored for compatibility
             elif block_type == "equation":
                 omml = block.get("omml", "")
-                mathml = block.get("mathml", "")
                 eq_text = block.get("text", "")
                 data_uri = block.get("data_uri", "")
 
+                eq_added = False
+
+                # Try OMML first
                 if omml:
                     try:
                         # Insert OMML equation directly into Word document (copyable/editable)
-                        from docx.oxml import parse_xml
-                        from docx.oxml.ns import nsdecls
                         p = doc.add_paragraph()
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         r = p.add_run()
                         omml_elem = parse_xml(f'<w:r {nsdecls("w", "m")}>{omml}</w:r>')
                         r._element.getparent().replace(r._element, omml_elem)
-                    except Exception:
-                        # Fallback to image if OMML insertion fails
-                        if data_uri and data_uri.startswith("data:image"):
-                            try:
-                                b64_data = data_uri.split(",")[1]
-                                img_data = base64.b64decode(b64_data)
-                                img_stream = BytesIO(img_data)
-                                doc.add_picture(img_stream, width=Inches(4.0))
-                                last_para = doc.paragraphs[-1]
-                                last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            except Exception:
-                                pass
-                        elif eq_text:
-                            eq_para = doc.add_paragraph(eq_text)
-                            eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                elif data_uri and data_uri.startswith("data:image"):
-                    # Fallback to image if no OMML
+                        eq_added = True
+                    except Exception as e:
+                        print(f"Warning: OMML insertion failed: {e}")
+
+                # Try image if OMML failed
+                if not eq_added and data_uri and data_uri.startswith("data:image"):
                     try:
                         b64_data = data_uri.split(",")[1]
                         img_data = base64.b64decode(b64_data)
                         img_stream = BytesIO(img_data)
-                        doc.add_picture(img_stream, width=Inches(4.0))
-                        last_para = doc.paragraphs[-1]
-                        last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    except Exception:
-                        pass
-                elif eq_text:
-                    # Last resort: plain text
-                    eq_para = doc.add_paragraph(eq_text)
-                    eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        eq_para = doc.add_paragraph()
+                        eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run = eq_para.add_run()
+                        run.add_picture(img_stream, width=Inches(4.0))
+                        eq_added = True
+                    except Exception as e:
+                        print(f"Warning: Equation image insertion failed: {e}")
+
+                # Try text if image failed
+                if not eq_added and eq_text:
+                    try:
+                        eq_para = doc.add_paragraph(eq_text)
+                        eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        eq_added = True
+                    except Exception as e:
+                        print(f"Warning: Equation text insertion failed: {e}")
 
         # Sections with formatted content
         sections = data.get("sections", [])
@@ -735,14 +731,30 @@ def export_word():
         # References
         references = data.get("references", [])
         if references:
+            doc.add_paragraph()  # Spacing before references
             doc.add_heading("References", level=2)
+            ref_count = 0
             for i, ref in enumerate(references, 1):
+                # Extract reference text
                 if isinstance(ref, dict):
                     ref_text = ref.get("text", "")
                 else:
-                    ref_text = str(ref) if ref else ""
-                if ref_text:
-                    doc.add_paragraph(f"{i}. {ref_text}", style="List Number")
+                    ref_text = str(ref).strip() if ref else ""
+
+                # Skip empty references
+                if not ref_text:
+                    continue
+
+                ref_count += 1
+                # Add numbered reference paragraph
+                ref_para = doc.add_paragraph(f"{ref_text}", style="List Number")
+                ref_para.paragraph_format.left_indent = Inches(0.5)
+                ref_para.paragraph_format.first_line_indent = Inches(-0.5)
+
+            if ref_count == 0:
+                # No valid references found
+                ref_para = doc.add_paragraph("No references provided")
+                ref_para.runs[0].italic = True
 
         # Generate file
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", title)[:60].strip("_") or "article"
