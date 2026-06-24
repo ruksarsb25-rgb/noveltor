@@ -291,12 +291,20 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
 
         # ── OMML equation detection (before blank-text skip) ─────────────────
         if phase == "body" and _has_math(p._element):
+            # Extract OMML for copyable equations in Word
+            omml = _extract_omml(p._element)
+            # Also create image for display
             data_uri = _math_para_to_image(p)
+
             if current_section is None:
                 current_section = _new_section("", "Other")
             target = (current_section["subsections"][-1]["content"]
                       if current_section["subsections"] else current_section["content"])
-            if data_uri:
+
+            if omml:
+                # Store OMML for proper Word equation format (copyable)
+                target.append({"type": "equation", "omml": omml, "data_uri": data_uri if data_uri else None})
+            elif data_uri:
                 target.append({"type": "equation", "data_uri": data_uri})
             else:
                 # Fallback: plain text from math runs
@@ -532,6 +540,20 @@ def _has_image(p_element) -> bool:
 
 def _has_math(p_element) -> bool:
     return bool(p_element.findall(f".//{_MATH_NS}oMath"))
+
+
+def _extract_omml(p_element) -> str:
+    """Extract the OMML (Office Math Markup Language) from an equation paragraph."""
+    from lxml import etree
+    omath_elements = p_element.findall(f".//{_MATH_NS}oMath")
+    if omath_elements:
+        try:
+            # Serialize the first oMath element to a string
+            omml_str = etree.tostring(omath_elements[0], encoding='unicode', method='xml')
+            return omml_str.strip()
+        except Exception:
+            pass
+    return ""
 
 
 def _math_para_to_image(p) -> str:

@@ -569,17 +569,46 @@ def export_word():
 
             # Equation block
             elif block_type == "equation":
-                data_uri = block.get("data_uri", "")
-                if data_uri and data_uri.startswith("data:image"):
+                omml = block.get("omml", "")
+                if omml:
                     try:
-                        b64_data = data_uri.split(",")[1]
-                        img_data = base64.b64decode(b64_data)
-                        img_stream = BytesIO(img_data)
-                        doc.add_picture(img_stream, width=Inches(4.0))
-                        last_para = doc.paragraphs[-1]
-                        last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        # Insert OMML equation directly into Word document (copyable/editable)
+                        from docx.oxml import parse_xml
+                        from docx.oxml.ns import nsdecls
+                        # Wrap OMML in a paragraph with run
+                        p = doc.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        # Create run with OMML
+                        r = p.add_run()
+                        # Parse and add OMML element to the run
+                        omml_elem = parse_xml(f'<w:r {nsdecls("w", "m")}>{omml}</w:r>')
+                        r._element.getparent().replace(r._element, omml_elem)
                     except Exception:
-                        pass
+                        # Fallback to image if OMML insertion fails
+                        data_uri = block.get("data_uri", "")
+                        if data_uri and data_uri.startswith("data:image"):
+                            try:
+                                b64_data = data_uri.split(",")[1]
+                                img_data = base64.b64decode(b64_data)
+                                img_stream = BytesIO(img_data)
+                                doc.add_picture(img_stream, width=Inches(4.0))
+                                last_para = doc.paragraphs[-1]
+                                last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            except Exception:
+                                pass
+                else:
+                    # Fallback to image if no OMML
+                    data_uri = block.get("data_uri", "")
+                    if data_uri and data_uri.startswith("data:image"):
+                        try:
+                            b64_data = data_uri.split(",")[1]
+                            img_data = base64.b64decode(b64_data)
+                            img_stream = BytesIO(img_data)
+                            doc.add_picture(img_stream, width=Inches(4.0))
+                            last_para = doc.paragraphs[-1]
+                            last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        except Exception:
+                            pass
 
         # Sections with formatted content
         sections = data.get("sections", [])
