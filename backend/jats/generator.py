@@ -355,10 +355,26 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
 def _inline_eq(parent: Element, block: dict, data: dict, n: int):
     """
     Emit a JATS <disp-formula> for a display equation.
-    The image file is named using eq_filename() and exported in the XML ZIP.
+    Includes MathML if available, with optional image fallback.
     """
     fname = eq_filename(data, n)
     eq_el = SubElement(parent, "disp-formula", {"id": f"E{n}"})
+
+    # Try to include MathML if available
+    mathml_str = block.get("mathml", "")
+    if mathml_str:
+        try:
+            # Parse and insert MathML directly
+            from xml.etree.ElementTree import fromstring as xml_fromstring
+            mathml_elem = xml_fromstring(mathml_str)
+            eq_el.append(mathml_elem)
+        except Exception:
+            # If MathML parsing fails, include as text
+            eq_text = block.get("text", "")
+            if eq_text:
+                SubElement(eq_el, "label-alt").text = eq_text
+
+    # Always include image as fallback
     SubElement(eq_el, "graphic", {
         "href":         fname,
         "mimetype":     "image",
