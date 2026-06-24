@@ -567,25 +567,25 @@ def export_word():
                                 if c_idx < len(table.rows[r_idx + row_offset].cells):
                                     table.rows[r_idx + row_offset].cells[c_idx].text = str(cell or "")
 
-            # Equation block
+            # Equation block - OMML for Word, MathML stored for compatibility
             elif block_type == "equation":
                 omml = block.get("omml", "")
+                mathml = block.get("mathml", "")
+                eq_text = block.get("text", "")
+                data_uri = block.get("data_uri", "")
+
                 if omml:
                     try:
                         # Insert OMML equation directly into Word document (copyable/editable)
                         from docx.oxml import parse_xml
                         from docx.oxml.ns import nsdecls
-                        # Wrap OMML in a paragraph with run
                         p = doc.add_paragraph()
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        # Create run with OMML
                         r = p.add_run()
-                        # Parse and add OMML element to the run
                         omml_elem = parse_xml(f'<w:r {nsdecls("w", "m")}>{omml}</w:r>')
                         r._element.getparent().replace(r._element, omml_elem)
                     except Exception:
                         # Fallback to image if OMML insertion fails
-                        data_uri = block.get("data_uri", "")
                         if data_uri and data_uri.startswith("data:image"):
                             try:
                                 b64_data = data_uri.split(",")[1]
@@ -596,19 +596,24 @@ def export_word():
                                 last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                             except Exception:
                                 pass
-                else:
+                        elif eq_text:
+                            eq_para = doc.add_paragraph(eq_text)
+                            eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                elif data_uri and data_uri.startswith("data:image"):
                     # Fallback to image if no OMML
-                    data_uri = block.get("data_uri", "")
-                    if data_uri and data_uri.startswith("data:image"):
-                        try:
-                            b64_data = data_uri.split(",")[1]
-                            img_data = base64.b64decode(b64_data)
-                            img_stream = BytesIO(img_data)
-                            doc.add_picture(img_stream, width=Inches(4.0))
-                            last_para = doc.paragraphs[-1]
-                            last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        except Exception:
-                            pass
+                    try:
+                        b64_data = data_uri.split(",")[1]
+                        img_data = base64.b64decode(b64_data)
+                        img_stream = BytesIO(img_data)
+                        doc.add_picture(img_stream, width=Inches(4.0))
+                        last_para = doc.paragraphs[-1]
+                        last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+                elif eq_text:
+                    # Last resort: plain text
+                    eq_para = doc.add_paragraph(eq_text)
+                    eq_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Sections with formatted content
         sections = data.get("sections", [])
