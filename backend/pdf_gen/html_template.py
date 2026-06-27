@@ -184,11 +184,11 @@ body {{
 }}
 
 /* ── Body ── */
-.body-section       {{ margin-top: 2pt; break-inside: avoid-column; }}
-.section-heading    {{ font-size: 10pt; font-weight: bold; color: {NAVY}; margin-bottom: 3pt; margin-top: 2pt; }}
+.body-section       {{ margin-top: 12pt; break-inside: avoid-column; }}
+.section-heading    {{ font-size: 10pt; font-weight: bold; color: {NAVY}; margin-bottom: 3pt; margin-top: 0pt; }}
 .section-body       {{ font-size: 9.5pt; line-height: 1.6; text-align: justify; margin-bottom: 2pt; }}
-.subsection         {{ margin-top: 2pt; }}
-.subsection-heading {{ font-size: 9.5pt; font-weight: bold; margin-bottom: 2pt; }}
+.subsection         {{ margin-top: 8pt; }}
+.subsection-heading {{ font-size: 9.5pt; font-weight: bold; margin-bottom: 2pt; margin-top: 0pt; }}
 
 /* ── Tables (full width) ── */
 .table-wrap  {{ margin: 3pt 0; page-break-inside: avoid; width: 100%; }}
