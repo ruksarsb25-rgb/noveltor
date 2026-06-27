@@ -178,12 +178,9 @@ body {{
 .abstract-text {{ font-size: 10pt; line-height: 1.6; text-align: justify; }}
 .keywords-line {{ font-size: 10pt; margin-top: 2pt; line-height: 1.5; }}
 
-/* ── Two-column body ── */
+/* ── Body (single column) ── */
 .two-col {{
-    column-count: 2;
-    column-gap: 18pt;
-    column-rule: 0.5pt solid #e0e0e0;
-    margin-top: 10pt;
+    margin-top: 2pt;
 }}
 
 /* ── Body ── */
@@ -313,45 +310,6 @@ def _render_table_block(tbl: dict) -> str:
         t += "</tbody>"
     t += "</table></div>"
     return t
-
-
-def _render_content_blocks_text_only(sec: dict) -> str:
-    """Render only text (paragraphs) from content array for column layout."""
-    html = ""
-    content = sec.get("content")
-    if content:
-        for block in content:
-            btype = block.get("type")
-            if btype == "paragraph":
-                text = (block.get("text") or "").strip()
-                if text:
-                    html += f'<div class="section-body">{_citify(_linkify(text))}</div>'
-    else:
-        # Fallback: legacy plain body string
-        body_text = (sec.get("body") or "").strip()
-        for para in re.split(r"\n{2,}", body_text):
-            para = para.strip()
-            if para:
-                html += f'<div class="section-body">{_citify(_linkify(para))}</div>'
-    return html
-
-
-def _render_content_blocks_full_width(sec: dict) -> str:
-    """Render only tables/figures/equations (full-width elements) from content array."""
-    html = ""
-    content = sec.get("content")
-    if content:
-        for block in content:
-            btype = block.get("type")
-            if btype == "table":
-                html += _render_table_block(block)
-            elif btype == "figure":
-                html += _render_figure_block(block)
-            elif btype == "equation":
-                uri = block.get("data_uri", "")
-                if uri:
-                    html += f'<div style="text-align:center;margin:3pt 0;"><img src="{uri}" style="max-height:60pt;max-width:100%;" alt="equation"/></div>'
-    return html
 
 
 def _render_content_blocks(sec: dict) -> str:
@@ -525,37 +483,26 @@ def build_html(article: dict, two_col: bool = False) -> str:
             f'<strong>Keywords:</strong> {_e("; ".join(keywords))}</div>'
         )
 
-    # ── Body sections (split text and full-width content) ────────────
-    body_text_parts = []
-    body_fullw_parts = []
-
+    # ── Body sections ────────────────────────────────────────────────
+    body_parts = []
     for sec in sections:
         heading = (sec.get("heading") or "").strip()
         subsecs = sec.get("subsections") or []
 
-        sec_text = '<div class="body-section">'
+        sec_html = '<div class="body-section">'
         if heading:
-            sec_text += f'<div class="section-heading">{_e_fmt(heading)}</div>'
-        sec_text += _render_content_blocks_text_only(sec)
+            sec_html += f'<div class="section-heading">{_e_fmt(heading)}</div>'
+        sec_html += _render_content_blocks(sec)
         for sub in subsecs:
             sh = (sub.get("heading") or "").strip()
-            sec_text += '<div class="subsection">'
+            sec_html += '<div class="subsection">'
             if sh:
-                sec_text += f'<div class="subsection-heading">{_e_fmt(sh)}</div>'
-            sec_text += _render_content_blocks_text_only(sub)
-            sec_text += "</div>"
-        sec_text += "</div>"
-        body_text_parts.append(sec_text)
-
-        # Collect full-width elements for this section
-        sec_fullw = _render_content_blocks_full_width(sec)
-        for sub in subsecs:
-            sec_fullw += _render_content_blocks_full_width(sub)
-        if sec_fullw:
-            body_fullw_parts.append(sec_fullw)
-
-    body_text_html = "\n".join(body_text_parts)
-    body_fullw_html = "\n".join(body_fullw_parts)
+                sec_html += f'<div class="subsection-heading">{_e_fmt(sh)}</div>'
+            sec_html += _render_content_blocks(sub)
+            sec_html += "</div>"
+        sec_html += "</div>"
+        body_parts.append(sec_html)
+    body_html = "\n".join(body_parts)
 
     # ── References ───────────────────────────────────────────────────
     refs_html = ""
@@ -596,12 +543,6 @@ def build_html(article: dict, two_col: bool = False) -> str:
     is_poster  = (article_type == "Enhanced Poster Abstract")
     body_class = ' class="poster"' if is_poster else ""
 
-    # Build body with full-width elements interspersed outside column div
-    if two_col and body_fullw_html:
-        body_content = f'{body_wrapper_open}{body_text_html}{body_wrapper_close}\n{body_fullw_html}'
-    else:
-        body_content = f'{body_wrapper_open}{body_text_html or body_html}{body_wrapper_close}'
-
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -619,7 +560,9 @@ def build_html(article: dict, two_col: bool = False) -> str:
 {doi_html}
 {abstract_html}
 {keywords_html}
-{body_content}
+{body_wrapper_open}
+{body_html}
+{body_wrapper_close}
 {refs_html}
 </body>
 </html>"""
