@@ -140,10 +140,10 @@ body {{
 .from-label          {{ font-size: 8pt; color: #aaa; }}
 .hdr-journal-name    {{ font-size: 11pt; font-weight: bold; color: {NAVY}; }}
 
-.header-rule {{ border: none; border-top: 2pt solid {NAVY}; margin: 7pt 0 10pt; }}
+.header-rule {{ border: none; border-top: 2pt solid {NAVY}; margin: 5pt 0 6pt; }}
 
 /* ── Article header ── */
-.badge-row {{ margin-bottom: 7pt; }}
+.badge-row {{ margin-bottom: 3pt; }}
 .badge {{
     display: inline-block;
     padding: 2pt 8pt;
@@ -158,25 +158,25 @@ body {{
 
 .article-title {{
     font-size: 16pt; font-weight: bold;
-    color: {NAVY}; line-height: 1.25; margin: 7pt 0 6pt;
+    color: {NAVY}; line-height: 1.25; margin: 3pt 0 2pt;
 }}
-.authors-line {{ font-size: 10pt; color: #222; margin-bottom: 3pt; }}
+.authors-line {{ font-size: 10pt; color: #222; margin-bottom: 1pt; }}
 .author-sup   {{ font-size: 6.5pt; color: {NAVY}; vertical-align: super; line-height: 0; }}
-.affiliations {{ font-size: 8pt; color: #666; line-height: 1.5; margin-bottom: 4pt; }}
+.affiliations {{ font-size: 8pt; color: #666; line-height: 1.5; margin-bottom: 1pt; }}
 .affil-sup    {{ font-size: 6pt; vertical-align: super; line-height: 0; }}
-.corresp-line {{ font-size: 8pt; color: #555; margin-bottom: 4pt; }}
-.dates-row    {{ font-size: 8.5pt; color: #555; margin-bottom: 8pt; }}
+.corresp-line {{ font-size: 8pt; color: #555; margin-bottom: 1pt; }}
+.dates-row    {{ font-size: 8.5pt; color: #555; margin-bottom: 2pt; }}
 .date-label   {{ font-weight: bold; color: #333; }}
 
-.section-rule {{ border: none; border-top: 1pt solid #ddd; margin: 8pt 0; }}
+.section-rule {{ border: none; border-top: 1pt solid #ddd; margin: 3pt 0; }}
 
 /* ── Abstract ── */
 .abstract-heading {{
     font-size: 10pt; font-weight: bold; color: {NAVY};
-    text-transform: uppercase; letter-spacing: 0.6pt; margin-bottom: 4pt;
+    text-transform: uppercase; letter-spacing: 0.6pt; margin-bottom: 2pt;
 }}
 .abstract-text {{ font-size: 10pt; line-height: 1.6; text-align: justify; }}
-.keywords-line {{ font-size: 10pt; margin-top: 5pt; line-height: 1.5; }}
+.keywords-line {{ font-size: 10pt; margin-top: 2pt; line-height: 1.5; }}
 
 /* ── Two-column body ── */
 .two-col {{
@@ -187,15 +187,15 @@ body {{
 }}
 
 /* ── Body ── */
-.body-section       {{ margin-top: 10pt; break-inside: avoid-column; }}
-.section-heading    {{ font-size: 10pt; font-weight: bold; color: {NAVY}; margin-bottom: 3pt; }}
-.section-body       {{ font-size: 9.5pt; line-height: 1.6; text-align: justify; margin-bottom: 4pt; }}
-.subsection         {{ margin-top: 6pt; }}
+.body-section       {{ margin-top: 2pt; break-inside: avoid-column; }}
+.section-heading    {{ font-size: 10pt; font-weight: bold; color: {NAVY}; margin-bottom: 3pt; margin-top: 2pt; }}
+.section-body       {{ font-size: 9.5pt; line-height: 1.6; text-align: justify; margin-bottom: 2pt; }}
+.subsection         {{ margin-top: 2pt; }}
 .subsection-heading {{ font-size: 9.5pt; font-weight: bold; margin-bottom: 2pt; }}
 
-/* ── Tables ── */
-.table-wrap  {{ margin: 10pt 0; page-break-inside: avoid; }}
-.table-label {{ font-size: 9pt; font-weight: bold; margin-bottom: 3pt; }}
+/* ── Tables (full width, break out of columns) ── */
+.table-wrap  {{ margin: 3pt 0; page-break-inside: avoid; column-span: all; }}
+.table-label {{ font-size: 9pt; font-weight: bold; margin-bottom: 2pt; }}
 .data-table  {{ width: 100%; border-collapse: collapse; font-size: 9pt; }}
 .data-table th {{
     background: {NAVY}; color: white;
@@ -204,8 +204,8 @@ body {{
 .data-table td  {{ padding: 3pt 6pt; border-bottom: 0.5pt solid #e0e0e0; vertical-align: top; }}
 .data-table .even td {{ background: #F5F7FA; }}
 
-/* ── Figures ── */
-.figure-wrap {{ margin: 10pt 0; }}
+/* ── Figures (full width, break out of columns) ── */
+.figure-wrap {{ margin: 3pt 0; column-span: all; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 /* Poster: images fill the full page width, no height cap */
 body.poster .figure-img {{ width: 100%; max-height: none; }}
@@ -215,16 +215,16 @@ body.poster .figure-img {{ width: 100%; max-height: none; }}
     font-size: 9pt; color: #bbb; border-radius: 2pt; margin-bottom: 3pt;
 }}
 .figure-caption {{ font-size: 8.5pt; font-style: italic; text-align: center; color: #555;
-                   page-break-before: avoid; }}
+                   page-break-before: avoid; margin-top: 1pt; }}
 
 /* ── References (rendered outside the two-col div — naturally full-width) ── */
-.references-section {{ margin-top: 14pt; }}
+.references-section {{ margin-top: 3pt; }}
 .references-heading {{
     font-size: 10pt; font-weight: bold; color: {NAVY};
-    margin-bottom: 6pt; border-top: 1pt solid #ddd; padding-top: 8pt;
+    margin-bottom: 2pt; border-top: 1pt solid #ddd; padding-top: 2pt;
 }}
 .ref-item {{
-    font-size: 8.5pt; line-height: 1.5; margin-bottom: 3pt;
+    font-size: 8.5pt; line-height: 1.5; margin-bottom: 1pt;
     padding-left: 18pt; text-indent: -18pt;
 }}
 .ref-doi {{ color: {NAVY}; text-decoration: none; }}
