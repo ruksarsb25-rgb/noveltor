@@ -53,18 +53,70 @@ def mathml_from_latex(latex_str: str) -> str:
 
 def extract_equation_text(omml_str: str) -> str:
     """
-    Extract plain text representation from OMML for fallbacks.
+    Extract text representation from OMML, preserving subscripts/superscripts.
+    Converts subscripts to Unicode characters (₀₁₂₃₄₅₆₇₈₉) for readability.
     """
     if not omml_str:
         return ""
 
+    # Unicode subscript and superscript mappings
+    subscript_map = {
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ',
+        'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ',
+        'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ',
+        'v': 'ᵥ', 'x': 'ₓ', '-': '₋', '+': '₊', '=': '₌',
+    }
+
+    superscript_map = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ', 'd': 'ᵈ', 'e': 'ᵉ',
+        'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'i': 'ⁱ', 'j': 'ʲ',
+        'k': 'ᵏ', 'l': 'ˡ', 'm': 'ᵐ', 'n': 'ⁿ', 'o': 'ᵒ',
+        'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ', 't': 'ᵗ', 'u': 'ᵘ',
+        'v': 'ᵛ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ', '-': '⁻',
+        '+': '⁺', '=': '⁼',
+    }
+
     try:
         omml = etree.fromstring(omml_str.encode('utf-8'))
-        text_elements = omml.xpath('.//*[local-name()="t"]')
-        equation_text = "".join([t.text or "" for t in text_elements]).strip()
+
+        def extract_with_format(element):
+            """Recursively extract text, preserving subscripts and superscripts."""
+            result = ""
+
+            # Check if this is a subscript or superscript element
+            tag_name = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+
+            if tag_name == 'sub':
+                # Extract subscript content and convert characters
+                sub_text = extract_with_format(element)
+                result = ''.join(subscript_map.get(c, c) for c in sub_text)
+            elif tag_name == 'sup':
+                # Extract superscript content and convert characters
+                sup_text = extract_with_format(element)
+                result = ''.join(superscript_map.get(c, c) for c in sup_text)
+            elif tag_name == 't':
+                # Regular text element
+                result = element.text or ""
+            else:
+                # Recursively process children
+                for child in element:
+                    result += extract_with_format(child)
+                # Add text after child elements
+                if element.text:
+                    result = element.text + result
+                if element.tail:
+                    result += element.tail
+
+            return result
+
+        equation_text = extract_with_format(omml).strip()
         return equation_text
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: OMML text extraction failed: {e}")
 
     return ""
 
