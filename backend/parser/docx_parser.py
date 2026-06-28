@@ -307,17 +307,16 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             target = (current_section["subsections"][-1]["content"]
                       if current_section["subsections"] else current_section["content"])
 
-            if omml:
-                # Store OMML, MathML, text, and image for all export formats
+            if omml or data_uri:
+                # Store OMML, text, and image for all export formats
+                # Prioritize extracted text, fallback to image
                 target.append({
                     "type": "equation",
-                    "omml": omml,
-                    "mathml": mathml,
-                    "text": eq_text,
+                    "omml": omml if omml else None,
+                    "mathml": mathml if mathml else None,
+                    "text": eq_text if eq_text else None,  # Extracted text with proper subscripts
                     "data_uri": data_uri if data_uri else None
                 })
-            elif data_uri:
-                target.append({"type": "equation", "data_uri": data_uri})
             else:
                 # Fallback: plain text from math runs
                 runs = p._element.findall(f".//{_MATH_NS}t")

@@ -340,19 +340,22 @@ def _render_content_blocks(sec: dict) -> str:
             elif btype == "figure":
                 html += _render_figure_block(block)
             elif btype == "equation":
-                # Render equation as selectable text with proper formatting
-                text = block.get("text", "")
+                # Render equation as selectable text (priority) with image fallback
+                text = block.get("text", "").strip() if block.get("text") else ""
                 label = block.get("label", "")
                 uri = block.get("data_uri", "")
 
-                if text and text.strip():
-                    # Use extracted equation text with proper subscripts/superscripts
+                # Always try to use text representation (selectable/copyable)
+                if text:
                     safe_text = _e(text)
-                    label_str = f"<strong>{_e(label)}:</strong> " if label else ""
+                    label_str = f"<strong>{_e(label)}:</strong> " if label else "<strong>Equation:</strong> "
                     html += f'<div class="equation">{label_str}{safe_text}</div>'
                 elif uri:
-                    # Fallback to image if no text available
+                    # Image fallback only if no text available
                     html += f'<div style="text-align:center;margin:6pt 0;"><img src="{uri}" style="max-height:100pt;max-width:100%;" alt="equation"/></div>'
+                else:
+                    # Last resort: empty equation placeholder
+                    html += '<div class="equation"><em>Equation unavailable</em></div>'
     else:
         # Fallback: legacy plain body string
         body_text = (sec.get("body") or "").strip()

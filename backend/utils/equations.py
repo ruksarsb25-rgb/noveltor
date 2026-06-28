@@ -83,38 +83,80 @@ def extract_equation_text(omml_str: str) -> str:
     try:
         omml = etree.fromstring(omml_str.encode('utf-8'))
 
-        def extract_with_format(element):
-            """Recursively extract text, preserving subscripts and superscripts."""
-            result = ""
+        def get_tag_name(element):
+            """Extract local tag name from namespaced tag."""
+            tag = element.tag
+            return tag.split('}')[-1] if '}' in tag else tag
 
-            # Check if this is a subscript or superscript element
-            tag_name = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+        def iter_text_with_format(element):
+            """Iteratively extract text, preserving subscripts/superscripts."""
+            # Use a stack for iterative processing to avoid recursion issues
+            stack = [(element, False)]  # (element, is_processed)
+            result_stack = []
+
+            while stack:
+                elem, is_processed = stack.pop()
+                tag_name = get_tag_name(elem)
+
+                if is_processed:
+                    # Second pass: we've processed children, now handle this element
+                    if tag_name == 'sub':
+                        # Convert to subscript
+                        text = result_stack.pop() if result_stack else ""
+                        result_stack.append(''.join(subscript_map.get(c, c) for c in text))
+                    elif tag_name == 'sup':
+                        # Convert to superscript
+                        text = result_stack.pop() if result_stack else ""
+                        result_stack.append(''.join(superscript_map.get(c, c) for c in text))
+                    elif tag_name == 't':
+                        # Text element
+                        result_stack.append(elem.text or "")
+                    else:
+                        # Accumulate text from children
+                        pass
+                else:
+                    # First pass: mark for processing and add children to stack
+                    stack.append((elem, True))
+                    # Add children in reverse order (for stack processing)
+                    for child in reversed(list(elem)):
+                        stack.append((child, False))
+
+            return "".join(result_stack).strip()
+
+        # Process elements in order, tracking what we've handled
+        result = ""
+        processed_t_elements = set()
+
+        for elem in omml.iter():
+            tag_name = get_tag_name(elem)
 
             if tag_name == 'sub':
-                # Extract subscript content and convert characters
-                sub_text = extract_with_format(element)
-                result = ''.join(subscript_map.get(c, c) for c in sub_text)
+                # Get text in subscript element
+                sub_text_elems = elem.xpath('.//*[local-name()="t"]')
+                for t_elem in sub_text_elems:
+                    if id(t_elem) not in processed_t_elements:
+                        sub_text = t_elem.text or ""
+                        result += ''.join(subscript_map.get(c, c) for c in sub_text)
+                        processed_t_elements.add(id(t_elem))
+
             elif tag_name == 'sup':
-                # Extract superscript content and convert characters
-                sup_text = extract_with_format(element)
-                result = ''.join(superscript_map.get(c, c) for c in sup_text)
+                # Get text in superscript element
+                sup_text_elems = elem.xpath('.//*[local-name()="t"]')
+                for t_elem in sup_text_elems:
+                    if id(t_elem) not in processed_t_elements:
+                        sup_text = t_elem.text or ""
+                        result += ''.join(superscript_map.get(c, c) for c in sup_text)
+                        processed_t_elements.add(id(t_elem))
+
             elif tag_name == 't':
-                # Regular text element
-                result = element.text or ""
-            else:
-                # Recursively process children
-                for child in element:
-                    result += extract_with_format(child)
-                # Add text after child elements
-                if element.text:
-                    result = element.text + result
-                if element.tail:
-                    result += element.tail
+                # Regular text - only process if not part of sub/sup
+                if id(elem) not in processed_t_elements:
+                    parent_tag = get_tag_name(elem.getparent()) if elem.getparent() is not None else None
+                    if parent_tag not in ('sub', 'sup'):
+                        result += elem.text or ""
+                        processed_t_elements.add(id(elem))
 
-            return result
-
-        equation_text = extract_with_format(omml).strip()
-        return equation_text
+        return result.strip()
     except Exception as e:
         print(f"Warning: OMML text extraction failed: {e}")
 
