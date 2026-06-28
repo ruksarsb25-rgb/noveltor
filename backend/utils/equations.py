@@ -14,22 +14,20 @@ def mathml_from_omml(omml_str: str) -> str:
         return ""
 
     try:
-        # Try to extract text content and create basic MathML
-        # This is a simplified conversion - a full converter would be more complex
-
         # Parse OMML
         omml = etree.fromstring(omml_str.encode('utf-8'))
 
-        # Extract text elements to build a simple representation
+        # Extract text elements to build equation representation
         text_elements = omml.xpath('.//*[local-name()="t"]')
         equation_text = "".join([t.text or "" for t in text_elements]).strip()
 
         if equation_text:
-            # Create a basic MathML wrapper with the extracted text
-            # Full OMML→MathML would require complex transformation
-            mathml = f'''<math xmlns="http://www.w3.org/1998/Math/MathML">
+            # Create proper MathML with actual equation content
+            # Escape special XML characters
+            safe_text = equation_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            mathml = f'''<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">
   <mrow>
-    <mtext>{etree.QName(omml).text or equation_text}</mtext>
+    <mtext>{safe_text}</mtext>
   </mrow>
 </math>'''
             return mathml

@@ -205,9 +205,13 @@ body {{
 .figure-wrap {{ margin: 3pt 0; width: 100%; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 
-/* ── Equations (selectable text/MathML) ── */
-.equation {{ text-align: center; margin: 4pt 0; padding: 6pt; background: #f9f9f9; border-radius: 2pt; font-size: 10pt; }}
-.equation math {{ display: block; text-align: center; }}
+/* ── Equations (selectable text) ── */
+.equation {{
+    text-align: center; margin: 6pt 0; padding: 8pt 6pt;
+    background: #f9f9f9; border-left: 3pt solid {NAVY};
+    border-radius: 2pt; font-size: 9.5pt; font-family: monospace;
+    line-height: 1.4;
+}}
 /* Poster: images fill the full page width, no height cap */
 body.poster .figure-img {{ width: 100%; max-height: none; }}
 .figure-box  {{
@@ -336,21 +340,17 @@ def _render_content_blocks(sec: dict) -> str:
             elif btype == "figure":
                 html += _render_figure_block(block)
             elif btype == "equation":
-                # Render equation as MathML (selectable text) instead of image
-                mathml = block.get("mathml", "")
+                # Render equation as selectable text (primary) or image (fallback)
                 text = block.get("text", "")
+                uri = block.get("data_uri", "")
 
-                if mathml:
-                    # Use MathML for proper rendering and selectability
-                    html += f'<div style="text-align:center;margin:3pt 0;padding:4pt;background:#f9f9f9;border-radius:2pt;font-family:serif;">{mathml}</div>'
-                elif text:
-                    # Fallback to text representation
-                    html += f'<div style="text-align:center;margin:3pt 0;padding:4pt;background:#f9f9f9;border-radius:2pt;font-family:monospace;font-size:9pt;">{_e(text)}</div>'
-                else:
-                    uri = block.get("data_uri", "")
-                    if uri:
-                        # Last resort: use image
-                        html += f'<div style="text-align:center;margin:3pt 0;"><img src="{uri}" style="max-height:60pt;max-width:100%;" alt="equation"/></div>'
+                if text and text.strip():
+                    # Use extracted equation text - always selectable and copyable
+                    safe_text = _e(text)
+                    html += f'<div class="equation"><strong>Equation:</strong> {safe_text}</div>'
+                elif uri:
+                    # Fallback to image if no text available
+                    html += f'<div style="text-align:center;margin:3pt 0;"><img src="{uri}" style="max-height:80pt;max-width:100%;" alt="equation"/></div>'
     else:
         # Fallback: legacy plain body string
         body_text = (sec.get("body") or "").strip()
