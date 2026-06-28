@@ -8,8 +8,8 @@ from lxml import etree
 def extract_equation_text(omml_str: str) -> str:
     """
     Extract text representation from OMML, preserving subscripts/superscripts.
+    Recursively processes all elements including nested fractions, subscripts, etc.
     Converts subscripts to Unicode characters (₀₁₂₃₄₅₆₇₈₉) for readability.
-    Handles sSub/sSup (script subscript/superscript), regular sub/sup, and fractions.
     """
     if not omml_str:
         return ""
@@ -42,86 +42,118 @@ def extract_equation_text(omml_str: str) -> str:
             """Extract local tag from namespaced element."""
             return elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
 
-        result = ""
-        processed_t_ids = set()
+        def process_element(elem):
+            """
+            Recursively process an OMML element and return its text representation.
+            Handles subscripts, superscripts, fractions, and all nested structures.
+            """
+            result = ""
+            tag_name = get_tag_name(elem)
 
-        # Process all direct children of oMath
-        for child in omml:
-            tag_name = get_tag_name(child)
+            # Text element
+            if tag_name == 't':
+                return elem.text or ""
 
-            # Regular text run
-            if tag_name == 'r':
-                for t in child.findall('.//{*}t'):
-                    if id(t) not in processed_t_ids:
-                        result += t.text or ""
-                        processed_t_ids.add(id(t))
+            # Regular text run (m:r)
+            elif tag_name == 'r':
+                for child in elem:
+                    result += process_element(child)
 
-            # Script subscript (sSub): Contains m:e (element) and m:sub (subscript)
+            # Script subscript (m:sSub: base + subscript)
             elif tag_name == 'sSub':
-                # Process base element
-                for e in child.findall('.//{*}e'):
-                    for t in e.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            result += t.text or ""
-                            processed_t_ids.add(id(t))
-                # Process subscript - use direct child search
-                for sub in child.findall('./{*}sub'):
-                    for t in sub.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            sub_text = t.text or ""
-                            result += ''.join(subscript_map.get(c, c) for c in sub_text)
-                            processed_t_ids.add(id(t))
-
-            # Script superscript (sSup): Contains m:e (element) and m:sup (superscript)
-            elif tag_name == 'sSup':
-                # Process base element
-                for e in child.findall('.//{*}e'):
-                    for t in e.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            result += t.text or ""
-                            processed_t_ids.add(id(t))
-                # Process superscript
-                for sup in child.findall('./{*}sup'):
-                    for t in sup.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            sup_text = t.text or ""
-                            result += ''.join(superscript_map.get(c, c) for c in sup_text)
-                            processed_t_ids.add(id(t))
-
-            # Regular subscript (sub)
-            elif tag_name == 'sub':
-                for t in child.findall('.//{*}t'):
-                    if id(t) not in processed_t_ids:
-                        sub_text = t.text or ""
+                # Get base from m:e (element)
+                for child in elem:
+                    child_tag = get_tag_name(child)
+                    if child_tag == 'e':
+                        result += process_element(child)
+                    elif child_tag == 'sub':
+                        # Convert subscript text
+                        sub_text = process_element(child)
                         result += ''.join(subscript_map.get(c, c) for c in sub_text)
-                        processed_t_ids.add(id(t))
 
-            # Regular superscript (sup)
-            elif tag_name == 'sup':
-                for t in child.findall('.//{*}t'):
-                    if id(t) not in processed_t_ids:
-                        sup_text = t.text or ""
+            # Script superscript (m:sSup: base + superscript)
+            elif tag_name == 'sSup':
+                # Get base from m:e (element)
+                for child in elem:
+                    child_tag = get_tag_name(child)
+                    if child_tag == 'e':
+                        result += process_element(child)
+                    elif child_tag == 'sup':
+                        # Convert superscript text
+                        sup_text = process_element(child)
                         result += ''.join(superscript_map.get(c, c) for c in sup_text)
-                        processed_t_ids.add(id(t))
 
-            # Fraction (f): Contains m:num (numerator) and m:den (denominator)
+            # Regular subscript (m:sub)
+            elif tag_name == 'sub':
+                sub_text = ""
+                for child in elem:
+                    sub_text += process_element(child)
+                result += ''.join(subscript_map.get(c, c) for c in sub_text)
+
+            # Regular superscript (m:sup)
+            elif tag_name == 'sup':
+                sup_text = ""
+                for child in elem:
+                    sup_text += process_element(child)
+                result += ''.join(superscript_map.get(c, c) for c in sup_text)
+
+            # Fraction (m:f: numerator / denominator)
             elif tag_name == 'f':
-                # Process numerator
-                for num in child.findall('./{*}num'):
-                    for t in num.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            result += t.text or ""
-                            processed_t_ids.add(id(t))
-                # Add fraction bar
-                result += "/"
-                # Process denominator
-                for den in child.findall('./{*}den'):
-                    for t in den.findall('.//{*}t'):
-                        if id(t) not in processed_t_ids:
-                            result += t.text or ""
-                            processed_t_ids.add(id(t))
+                num_text = ""
+                den_text = ""
+                for child in elem:
+                    child_tag = get_tag_name(child)
+                    if child_tag == 'num':
+                        num_text = process_element(child)
+                    elif child_tag == 'den':
+                        den_text = process_element(child)
+                if num_text or den_text:
+                    result += f"{num_text}/{den_text}"
 
-        return result.strip()
+            # Element wrapper (m:e)
+            elif tag_name == 'e':
+                for child in elem:
+                    result += process_element(child)
+
+            # Numerator (m:num)
+            elif tag_name == 'num':
+                for child in elem:
+                    result += process_element(child)
+
+            # Denominator (m:den)
+            elif tag_name == 'den':
+                for child in elem:
+                    result += process_element(child)
+
+            # Bracket/delimiter (m:d)
+            elif tag_name == 'd':
+                for child in elem:
+                    result += process_element(child)
+
+            # Radical/root (m:rad)
+            elif tag_name == 'rad':
+                for child in elem:
+                    result += process_element(child)
+
+            # Math paragraph properties - skip
+            elif tag_name in ('oMathPara', 'sPr', 'rPr', 'fPr', 'sSubPr', 'sSupPr', 'ctrlPr', 'rFonts', 'sz', 'szCs', 'nor'):
+                return ""
+
+            # Properties and formatting - skip
+            elif tag_name.endswith('Pr') or tag_name in ('w:rPr', 'w:rFonts', 'w:sz', 'w:szCs'):
+                return ""
+
+            # Default: process all children
+            else:
+                for child in elem:
+                    result += process_element(child)
+
+            return result
+
+        # Start processing from root
+        text = process_element(omml).strip()
+        return text
+
     except Exception as e:
         print(f"Warning: OMML text extraction failed: {e}")
 
