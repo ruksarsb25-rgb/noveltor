@@ -907,6 +907,27 @@ def _crossref_item_to_vancouver(item: dict) -> str:
     return " ".join(parts)
 
 
+@app.route("/export/pdf-latex", methods=["POST"])
+def export_pdf_latex():
+    """Export article as PDF using LaTeX for professional mathematical typesetting"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.pdf_latex import generate_pdf_from_latex
+
+        pdf_bytes = generate_pdf_from_latex(data)
+
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}_latex.pdf"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"LaTeX PDF generation failed: {str(e)}"}), 500
+
+
 @app.route("/format-refs", methods=["POST"])
 def format_refs():
     """
