@@ -17,6 +17,15 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
     """
     Parse a DOCX file as a poster document.
 
+    Structure expected:
+    - Line 1: Title
+    - Line 2: Authors (separated by commas)
+    - Line 3: Affiliation
+    - Line 4: Email/Contact
+    - Line N: "Abstract"
+    - Following lines: Abstract text
+    - Images: Embedded poster image
+
     Returns:
         Dict with keys:
             - type: "poster"
@@ -29,71 +38,84 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
 
     title = ""
     authors = []
+    affiliation = ""
     abstract = ""
     poster_image = ""
 
-    # Extract title from first non-empty paragraph
-    for para in doc.paragraphs[:10]:
-        text = para.text.strip()
-        if text and not title:
-            title = text
-            break
-
-    # Extract body text for authors and abstract
-    body_text = []
-    for para in doc.paragraphs[1:]:
+    # Extract paragraphs with text
+    paragraphs_text = []
+    for para in doc.paragraphs:
         text = para.text.strip()
         if text:
-            body_text.append(text)
+            paragraphs_text.append(text)
 
-    # Simple heuristic: look for "Abstract" or "ABSTRACT" keyword
+    if not paragraphs_text:
+        return {
+            "type": "poster",
+            "title": "Untitled Poster",
+            "authors": [{"first_name": "Author", "last_name": "Name", "affiliation": ""}],
+            "abstract": "",
+            "poster_image": "",
+        }
+
+    # Line 0: Title
+    title = paragraphs_text[0]
+
+    # Line 1: Authors (comma-separated: "FirstName LastName, FirstName LastName, ...")
+    authors_str = paragraphs_text[1] if len(paragraphs_text) > 1 else ""
+    author_names = [a.strip() for a in authors_str.split(",")]
+
+    # Line 2: Affiliation
+    affiliation = paragraphs_text[2] if len(paragraphs_text) > 2 else ""
+
+    # Extract authors with shared affiliation
+    for author_str in author_names:
+        if author_str:
+            # Try to split into first and last name
+            parts = author_str.rsplit(" ", 1)
+            if len(parts) == 2:
+                authors.append({
+                    "first_name": parts[0].strip(),
+                    "last_name": parts[1].strip(),
+                    "affiliation": affiliation,
+                })
+            elif parts:
+                authors.append({
+                    "first_name": parts[0].strip(),
+                    "last_name": "",
+                    "affiliation": affiliation,
+                })
+
+    # Find Abstract section and extract text
     abstract_idx = -1
-    for i, text in enumerate(body_text):
-        if "abstract" in text.lower():
+    for i, text in enumerate(paragraphs_text):
+        if text.lower().startswith("abstract"):
             abstract_idx = i
             break
 
-    # If abstract found, extract it (next paragraph(s) until we hit something else)
     if abstract_idx >= 0:
-        # Combine remaining paragraphs as abstract (simplified)
-        abstract_parts = []
-        for i in range(abstract_idx + 1, len(body_text)):
-            if body_text[i]:
-                abstract_parts.append(body_text[i])
-                # Stop if we hit too much text (assume abstract is first ~500 chars)
-                if len(" ".join(abstract_parts)) > 500:
-                    break
-        abstract = " ".join(abstract_parts)
+        # Collect abstract text until we hit another section (Keywords, Author Contributions, etc.)
+        abstract_lines = []
+        for i in range(abstract_idx + 1, len(paragraphs_text)):
+            section_keywords = [
+                "keywords",
+                "author contributions",
+                "funding",
+                "data availability",
+                "acknowledgments",
+                "conflicts of interest",
+                "references",
+            ]
+            if any(
+                paragraphs_text[i].lower().startswith(kw)
+                for kw in section_keywords
+            ):
+                break
+            abstract_lines.append(paragraphs_text[i])
 
-    # Extract authors with affiliations
-    # Simple approach: parse from document metadata or body
-    authors_from_meta = []
+        abstract = " ".join(abstract_lines).strip()
 
-    # Try to get authors from document core properties
-    if doc.core_properties.author:
-        author_names = doc.core_properties.author.split(",")
-        for name in author_names:
-            name = name.strip()
-            if name:
-                parts = name.rsplit(" ", 1)  # Split by last space
-                if len(parts) == 2:
-                    authors_from_meta.append({
-                        "first_name": parts[0],
-                        "last_name": parts[1],
-                        "affiliation": ""
-                    })
-
-    if authors_from_meta:
-        authors = authors_from_meta
-    else:
-        # Create default author if none found
-        authors = [{
-            "first_name": "Author",
-            "last_name": "Name",
-            "affiliation": ""
-        }]
-
-    # Extract embedded images and convert first one to base64
+    # Extract embedded images and convert to base64
     poster_image = ""
     for rel in doc.part.rels.values():
         if "image" in rel.target_ref:
@@ -101,11 +123,15 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
                 image_part = rel.target_part
                 image_bytes = image_part.blob
                 image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                # Use first image found
+                # Use first image found as poster
                 poster_image = image_base64
                 break
             except Exception:
                 continue
+
+    # Fallback: if no authors extracted, create default
+    if not authors:
+        authors = [{"first_name": "Author", "last_name": "Name", "affiliation": affiliation}]
 
     return {
         "type": "poster",
