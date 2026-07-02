@@ -24,6 +24,7 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
     title = poster.get("title", "Untitled Poster")
     authors = poster.get("authors", [])
     abstract = poster.get("abstract", "")
+    references = poster.get("references", [])
     poster_image = poster.get("poster_image", "")
 
     # Build author list with affiliations
@@ -40,14 +41,23 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
                 authors_html += f'<br><span class="affiliation">{affiliation}</span>'
             authors_html += '</div>'
 
-    # Determine if image is base64 or URL
-    if poster_image.startswith("data:"):
-        image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
-    elif poster_image.startswith("http"):
-        image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
-    else:
-        # Assume it's base64 encoded
-        image_tag = f'<img src="data:image/png;base64,{poster_image}" alt="Poster" class="poster-image">'
+    # For web preview, only include image if it's reasonably sized
+    # Large base64 images (>10MB) won't render well in browsers
+    image_tag = ""
+    if poster_image:
+        image_size_mb = len(poster_image) / (1024 * 1024)
+        if image_size_mb > 50:
+            # Image too large for web preview, show placeholder
+            image_tag = f'<div class="poster-placeholder"><p>Poster Image ({image_size_mb:.1f} MB)</p><p style="font-size: 0.9em; color: #999;">Image too large for web preview. Download Word, PDF, or HTML for full image.</p></div>'
+        else:
+            # Include smaller images
+            if poster_image.startswith("data:"):
+                image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
+            elif poster_image.startswith("http"):
+                image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
+            else:
+                # Base64 encoded
+                image_tag = f'<img src="data:image/png;base64,{poster_image}" alt="Poster" class="poster-image">'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -144,6 +154,20 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
             box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
         }}
 
+        .poster-placeholder {{
+            padding: 60px 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            border: 2px dashed #999;
+            border-radius: 8px;
+            text-align: center;
+            color: #666;
+        }}
+
+        .poster-placeholder p {{
+            margin: 10px 0;
+            font-size: 1.1em;
+        }}
+
         @media (max-width: 768px) {{
             .metadata-section {{
                 padding: 25px;
@@ -198,6 +222,17 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
         <div class="poster-section">
             {image_tag}
         </div>
+
+        {f'''<!-- References Section -->
+        <div class="poster-section" style="background: #f8f9fa; border-top: 1px solid #e0e0e0;">
+            <div style="width: 100%; text-align: left;">
+                <h2 style="color: #333; font-size: 1.3rem; margin-bottom: 15px; font-weight: 600;">References</h2>
+                <ol style="color: #555; font-size: 0.95rem; line-height: 1.6; margin-left: 20px;">
+                    {chr(10).join(f"<li>{ref.get('raw_text', ref) if isinstance(ref, dict) else ref}</li>" for ref in references)}
+                </ol>
+            </div>
+        </div>
+        ''' if references else ''}
 
         <!-- Footer -->
         <div class="footer">

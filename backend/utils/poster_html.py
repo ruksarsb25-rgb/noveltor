@@ -35,14 +35,23 @@ def generate_poster_html_document(poster: Dict[str, Any]) -> str:
             if affiliation:
                 authors_html += f'<p class="affiliation">{affiliation}</p>'
 
-    # Prepare image tag
-    if poster_image.startswith("data:"):
-        image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
-    elif poster_image.startswith("http"):
-        image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
-    else:
-        # Assume it's base64 encoded
-        image_tag = f'<img src="data:image/png;base64,{poster_image}" alt="Poster" class="poster-image">'
+    # For HTML documents, only embed reasonably-sized images
+    # Large images (>50MB base64) won't render well in browsers
+    image_tag = ""
+    if poster_image:
+        image_size_mb = len(poster_image) / (1024 * 1024)
+        if image_size_mb > 50:
+            # Show placeholder for large images
+            image_tag = f'<div class="poster-placeholder"><p>Poster Image ({image_size_mb:.1f} MB)</p><p>Image too large for HTML preview. Download PDF or Word document for full image.</p></div>'
+        else:
+            # Include smaller images
+            if poster_image.startswith("data:"):
+                image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
+            elif poster_image.startswith("http"):
+                image_tag = f'<img src="{poster_image}" alt="Poster" class="poster-image">'
+            else:
+                # Base64 encoded
+                image_tag = f'<img src="data:image/png;base64,{poster_image}" alt="Poster" class="poster-image">'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -130,6 +139,20 @@ def generate_poster_html_document(poster: Dict[str, Any]) -> str:
         .poster-image {{
             max-width: 100%;
             height: auto;
+        }}
+
+        .poster-placeholder {{
+            padding: 60px 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            border: 2px dashed #999;
+            border-radius: 8px;
+            text-align: center;
+            color: #666;
+        }}
+
+        .poster-placeholder p {{
+            margin: 10px 0;
+            font-size: 1.1em;
         }}
 
         @media print {{

@@ -115,6 +115,26 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
 
         abstract = " ".join(abstract_lines).strip()
 
+    # Find References section and extract
+    references = []
+    references_idx = -1
+    for i, text in enumerate(paragraphs_text):
+        if text.lower().startswith("references"):
+            references_idx = i
+            break
+
+    if references_idx >= 0:
+        for i in range(references_idx + 1, len(paragraphs_text)):
+            ref_text = paragraphs_text[i].strip()
+            # Stop if we hit another major section
+            if any(
+                ref_text.lower().startswith(kw)
+                for kw in ["author contributions", "funding", "acknowledgments"]
+            ):
+                break
+            if ref_text:  # Skip empty lines
+                references.append({"raw_text": ref_text})
+
     # Extract embedded images and convert to base64
     poster_image = ""
     for rel in doc.part.rels.values():
@@ -138,5 +158,6 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
         "title": title or "Untitled Poster",
         "authors": authors,
         "abstract": abstract,
+        "references": references,
         "poster_image": poster_image,
     }
