@@ -928,6 +928,104 @@ def export_pdf_latex():
         return jsonify({"error": f"LaTeX PDF generation failed: {str(e)}"}), 500
 
 
+@app.route("/export/poster-web", methods=["POST"])
+def export_poster_web():
+    """Export poster as responsive HTML preview"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_web import generate_poster_html
+
+        html = generate_poster_html(data)
+        resp = make_response(html)
+        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster HTML generation failed: {str(e)}"}), 500
+
+
+@app.route("/export/poster-word", methods=["POST"])
+def export_poster_word():
+    """Export poster as Word document (metadata + image)"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_word import generate_poster_word
+
+        word_bytes = generate_poster_word(data)
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
+        resp = make_response(word_bytes)
+        resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.docx"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster Word generation failed: {str(e)}"}), 500
+
+
+@app.route("/export/poster-pdf-latex", methods=["POST"])
+def export_poster_pdf_latex():
+    """Export poster as PDF using LaTeX (metadata + image on separate pages)"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_pdf_latex import generate_poster_pdf_latex
+
+        pdf_bytes = generate_poster_pdf_latex(data)
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.pdf"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster PDF generation failed: {str(e)}"}), 500
+
+
+@app.route("/export/poster-html", methods=["POST"])
+def export_poster_html():
+    """Export poster as HTML document"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_html import generate_poster_html_document
+
+        html = generate_poster_html_document(data)
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
+        resp = make_response(html)
+        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.html"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster HTML generation failed: {str(e)}"}), 500
+
+
+@app.route("/export/poster-xml", methods=["POST"])
+def export_poster_xml():
+    """Export poster as JATS XML"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_xml import generate_poster_xml
+
+        xml = generate_poster_xml(data)
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
+        resp = make_response(xml)
+        resp.headers["Content-Type"] = "application/xml; charset=utf-8"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.xml"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster XML generation failed: {str(e)}"}), 500
+
+
 @app.route("/format-refs", methods=["POST"])
 def format_refs():
     """

@@ -1,37 +1,36 @@
 """
-Generate PDFs using LaTeX for professional mathematical typesetting.
-Replaces WeasyPrint for better equation rendering and academic appearance.
+Generate PDFs for posters using LaTeX.
 """
 
 import subprocess
 import tempfile
-import os
 from pathlib import Path
 from typing import Dict, Any
 
 
-def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
+def generate_poster_pdf_latex(poster: Dict[str, Any]) -> bytes:
     """
-    Generate a professional PDF from article data using LaTeX.
+    Generate a professional PDF from poster data using LaTeX.
+
+    Args:
+        poster: Dict with poster data
 
     Returns:
         PDF file as bytes
     """
-    from utils.latex_converter import LaTeXGenerator
-
-    # Generate LaTeX source
-    from utils.latex_converter import LaTeXGenerator
-
-    generator = LaTeXGenerator(article)
-    latex_source = generator.generate()
+    from utils.poster_latex import PosterLaTeXGenerator
 
     # Create temporary directory for LaTeX compilation
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
 
+        # Generate LaTeX source
+        generator = PosterLaTeXGenerator(poster)
+        latex_source = generator.generate(tmpdir)
+
         # Write LaTeX source to file
         tex_file = tmpdir / "document.tex"
-        tex_file.write_text(latex_source, encoding='utf-8')
+        tex_file.write_text(latex_source, encoding="utf-8")
 
         # Run pdflatex
         try:
@@ -39,15 +38,16 @@ def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
                 [
                     "pdflatex",
                     "-interaction=nonstopmode",
-                    "-output-directory", str(tmpdir),
-                    str(tex_file)
+                    "-output-directory",
+                    str(tmpdir),
+                    str(tex_file),
                 ],
                 capture_output=True,
-                timeout=30
+                timeout=30,
             )
 
             if result.returncode != 0:
-                error_msg = result.stdout.decode('utf-8', errors='ignore')
+                error_msg = result.stdout.decode("utf-8", errors="ignore")
                 raise Exception(f"LaTeX compilation failed:\n{error_msg}")
 
             # Read generated PDF

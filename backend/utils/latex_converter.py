@@ -27,15 +27,14 @@ def equation_to_latex(equation_text: str) -> str:
     for unicode_char, latex_char in unicode_to_latex.items():
         latex = latex.replace(unicode_char, latex_char)
 
-    # Handle fractions: A/B → \frac{A}{B}
-    # Simple pattern for now - can be enhanced
-    latex = re.sub(r'([a-zA-Z0-9_}\)])\s*/\s*([a-zA-Z0-9_{(])', r'\\frac{\1}{\2}', latex)
-
-    # Escape special LaTeX characters
+    # Escape special LaTeX characters (do this before fraction conversion)
     latex = latex.replace('&', r'\&')
     latex = latex.replace('%', r'\%')
     latex = latex.replace('$', r'\$')
     latex = latex.replace('#', r'\#')
+
+    # Replace × with proper LaTeX multiplication
+    latex = latex.replace('×', r'\times')
 
     return latex
 
@@ -183,7 +182,6 @@ class LaTeXGenerator:
     def generate(self) -> str:
         """Generate complete LaTeX document."""
         latex = r"""\documentclass[11pt,a4paper]{article}
-\usepackage[utf-8]{inputenc}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath}
 \usepackage{amssymb}
