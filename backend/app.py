@@ -47,7 +47,7 @@ def parse():
     if not allowed_file(file.filename):
         return jsonify({"error": "Only .docx files are supported"}), 400
 
-    doc_mode = request.form.get("doc_mode", "article")  # article | abstracts
+    doc_mode = request.form.get("doc_mode", "article")  # article | abstracts | poster
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
@@ -58,6 +58,9 @@ def parse():
             from parser.abstract_parser import parse_abstract_collection
             result = parse_abstract_collection(tmp_path)
             result["collection_type"] = doc_mode  # "abstracts" or "poster_abstracts"
+        elif doc_mode == "poster":
+            from parser.poster_parser import parse_poster
+            result = parse_poster(tmp_path)
         else:
             result = parse_docx(tmp_path)
         return jsonify(result)

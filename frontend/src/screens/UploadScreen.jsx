@@ -5,7 +5,7 @@ import { API_BASE } from "../utils/api.js";
 const DOC_MODES = [
   { value: "article",          label: "Research Article",         desc: "Full paper with sections, references, figures" },
   { value: "abstracts",        label: "Abstract Collection",      desc: "Multiple oral/poster abstracts in one document" },
-  { value: "poster_abstracts", label: "Poster Abstract Collection", desc: "Conference poster abstracts in one document" },
+  { value: "poster",           label: "Poster",                   desc: "Single poster with metadata and image" },
 ];
 
 function saveToRecentDocuments(data, fileName, docMode) {
