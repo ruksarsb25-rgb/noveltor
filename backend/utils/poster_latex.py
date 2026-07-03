@@ -1,12 +1,14 @@
 """
 Convert poster content to LaTeX format for professional PDF generation.
 Page 1: Metadata (title, authors, affiliations, abstract)
-Page 2: Poster image
+Page 2: Poster image (converted from EMF to PNG if needed)
 """
 
 import base64
 import io
+import subprocess
 from typing import Dict, Any
+from pathlib import Path
 
 
 class PosterLaTeXGenerator:
@@ -59,8 +61,8 @@ class PosterLaTeXGenerator:
 
     def save_image_file(self, tmpdir) -> str:
         """
-        Save base64 image to file and return filename.
-        Returns empty string if image cannot be saved.
+        Save and convert image (EMF → PNG) for LaTeX inclusion.
+        Returns filename if successful, empty string otherwise.
         """
         if not self.poster_image:
             return ""
@@ -73,10 +75,34 @@ class PosterLaTeXGenerator:
 
             image_bytes = base64.b64decode(image_data)
 
-            # Save to file
-            image_path = tmpdir / "poster.png"
-            image_path.write_bytes(image_bytes)
-            return "poster.png"
+            # Save raw image
+            tmpdir = Path(tmpdir)
+            raw_image_path = tmpdir / "poster_raw.emf"
+            raw_image_path.write_bytes(image_bytes)
+
+            # Convert EMF to PNG using ImageMagick
+            png_path = tmpdir / "poster.png"
+            try:
+                # Try newer 'magick' command first (ImageMagick v7+)
+                subprocess.run(
+                    ["magick", str(raw_image_path), str(png_path)],
+                    capture_output=True,
+                    timeout=60,
+                    check=True
+                )
+                if png_path.exists():
+                    return "poster.png"
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                # If conversion fails, try using the image as-is
+                pass
+
+            # Fallback: if conversion failed, check if it's already a supported format
+            # Try to use raw file directly
+            if raw_image_path.exists():
+                return "poster_raw.emf"
+
+            return ""
+
         except Exception:
             return ""
 
@@ -94,37 +120,55 @@ class PosterLaTeXGenerator:
         if tmpdir and self.poster_image:
             image_filename = self.save_image_file(tmpdir)
 
-        latex = r"""\documentclass[11pt,a4paper]{article}
+        latex = r"""\documentclass[12pt,a4paper]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{hyperref}
+\usepackage{setspace}
+\setstretch{1.3}
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
 
 """
 
-        # Title
-        latex += f"\\title{{{self.escape_latex(self.title)}}}\n"
+        # Title - larger and centered
+        latex += f"\\section*{{{self.escape_latex(self.title)}}}\n\n"
 
-        # Authors
+        # Authors - with affiliations
         if self.authors:
-            latex += f"\\author{{{self.format_authors()}}}\n"
+            for author in self.authors:
+                first_name = author.get("first_name", "").strip()
+                last_name = author.get("last_name", "").strip()
+                affiliation = author.get("affiliation", "").strip()
 
-        # Date
-        latex += "\\date{}\n\n"
+                name = f"{first_name} {last_name}".strip()
+                latex += f"\\textbf{{{self.escape_latex(name)}}}\n\n"
 
-        latex += "\\begin{document}\n\n"
-        latex += "\\maketitle\n\n"
+                if affiliation:
+                    latex += f"\\textit{{{self.escape_latex(affiliation)}}}\n\n"
 
         # Abstract
         if self.abstract:
-            latex += "\\begin{abstract}\n"
-            latex += f"{self.escape_latex(self.abstract)}\n"
-            latex += "\\end{abstract}\n\n"
+            latex += "\\section*{Abstract}\n\n"
+            latex += f"{self.escape_latex(self.abstract)}\n\n"
 
-        # Page break
-        latex += "\\newpage\n\n"
+        # References
+        if hasattr(self, 'references') and self.references:
+            latex += "\\section*{References}\n\n"
+            latex += "\\begin{enumerate}\n"
+            for ref in self.references:
+                ref_text = ref.get("raw_text") if isinstance(ref, dict) else str(ref)
+                latex += f"\\item {self.escape_latex(ref_text)}\n"
+            latex += "\\end{enumerate}\n\n"
 
-        # Poster image
+        # Page break before image
         if image_filename:
+            latex += "\\newpage\n\n"
+            latex += "\\section*{Poster}\n\n"
             latex += "\\begin{center}\n"
             latex += f"\\includegraphics[width=0.9\\textwidth]{{{image_filename}}}\n"
             latex += "\\end{center}\n\n"

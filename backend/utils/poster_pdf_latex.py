@@ -26,6 +26,8 @@ def generate_poster_pdf_latex(poster: Dict[str, Any]) -> bytes:
 
         # Generate LaTeX source
         generator = PosterLaTeXGenerator(poster)
+        # Pass references to generator
+        generator.references = poster.get("references", [])
         latex_source = generator.generate(tmpdir)
 
         # Write LaTeX source to file
