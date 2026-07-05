@@ -1044,16 +1044,28 @@ def export_poster_pdf_docx():
 
         # Extract poster metadata and image from DOCX
         try:
+            print(f"[POSTER] Parsing DOCX for image extraction...")
             poster_data = parse_poster(tmp_path)
             poster_image = poster_data.get("poster_image", "")
 
+            print(f"[POSTER] Image extracted: {len(poster_image)} bytes")
+            print(f"[POSTER] Image present: {bool(poster_image)}")
+
             # Add poster image as overlay on first page
             if poster_image:
+                print(f"[POSTER] Adding image overlay to PDF...")
                 from utils.pdf_logos import add_logos_to_pdf
+                pdf_before = len(pdf_bytes)
                 # Use the image embedding system to add poster as "publisher logo"
                 pdf_bytes = add_logos_to_pdf(pdf_bytes, "", poster_image)
+                pdf_after = len(pdf_bytes)
+                print(f"[POSTER] PDF size before: {pdf_before}, after: {pdf_after}")
+            else:
+                print(f"[POSTER] No image found in poster data")
         except Exception as e:
-            print(f"Warning: Could not embed poster image: {e}")
+            import traceback
+            print(f"[POSTER] Error embedding image: {e}")
+            print(f"[POSTER] Traceback: {traceback.format_exc()}")
 
         # Add logos if provided
         if journal_logo or publisher_logo:
