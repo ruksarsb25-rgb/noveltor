@@ -11,7 +11,15 @@ apt-get install -y \
     dvipng
 
 echo "Installing LibreOffice (for poster PDF conversion)..."
-apt-get install -y libreoffice libreoffice-writer
+apt-get install -y \
+    libreoffice \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    fonts-liberation
 
 echo "Installing Python dependencies..."
 pip install -r backend/requirements.txt
