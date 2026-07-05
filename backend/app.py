@@ -1009,6 +1009,39 @@ def export_poster_html():
         return jsonify({"error": f"Poster HTML generation failed: {str(e)}"}), 500
 
 
+@app.route("/export/poster-pdf-docx", methods=["POST"])
+def export_poster_pdf_docx():
+    """Export poster as PDF using LibreOffice (converts DOCX with embedded images)"""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if file.filename == "" or not allowed_file(file.filename):
+        return jsonify({"error": "Invalid file"}), 400
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+
+        from utils.poster_pdf_libreoffice import generate_poster_pdf_libreoffice
+
+        pdf_bytes = generate_poster_pdf_libreoffice(tmp_path)
+
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", file.filename.rsplit(".", 1)[0])[:60].strip("_") or "poster"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.pdf"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster PDF generation failed: {str(e)}"}), 500
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
 @app.route("/export/poster-xml", methods=["POST"])
 def export_poster_xml():
     """Export poster as JATS XML"""
