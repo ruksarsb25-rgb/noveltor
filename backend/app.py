@@ -1032,7 +1032,14 @@ def export_poster_pdf_docx():
         from utils.pdf_logos import add_logos_to_pdf
 
         # Convert DOCX to PDF
-        pdf_bytes = generate_poster_pdf_libreoffice(tmp_path)
+        try:
+            pdf_bytes = generate_poster_pdf_libreoffice(tmp_path)
+        except Exception as e:
+            # Log the full error for debugging
+            import traceback
+            print(f"ERROR in PDF generation: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            raise
 
         # Add logos if provided
         if journal_logo or publisher_logo:
