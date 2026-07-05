@@ -1011,7 +1011,7 @@ def export_poster_html():
 
 @app.route("/export/poster-pdf-docx", methods=["POST"])
 def export_poster_pdf_docx():
-    """Export poster as PDF using LibreOffice (converts DOCX with embedded images)"""
+    """Export poster as PDF using LibreOffice (converts DOCX with embedded images and logos)"""
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -1019,14 +1019,24 @@ def export_poster_pdf_docx():
     if file.filename == "" or not allowed_file(file.filename):
         return jsonify({"error": "Invalid file"}), 400
 
+    # Optional: get logos from form data
+    journal_logo = request.form.get("journal_logo", "")
+    publisher_logo = request.form.get("publisher_logo", "")
+
     try:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
 
         from utils.poster_pdf_libreoffice import generate_poster_pdf_libreoffice
+        from utils.pdf_logos import add_logos_to_pdf
 
+        # Convert DOCX to PDF
         pdf_bytes = generate_poster_pdf_libreoffice(tmp_path)
+
+        # Add logos if provided
+        if journal_logo or publisher_logo:
+            pdf_bytes = add_logos_to_pdf(pdf_bytes, journal_logo, publisher_logo)
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", file.filename.rsplit(".", 1)[0])[:60].strip("_") or "poster"
         resp = make_response(pdf_bytes)
