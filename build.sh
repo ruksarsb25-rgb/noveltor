@@ -10,6 +10,9 @@ apt-get install -y \
     cm-super \
     dvipng
 
+echo "Installing LibreOffice (for poster PDF conversion)..."
+apt-get install -y libreoffice libreoffice-writer
+
 echo "Installing Python dependencies..."
 pip install -r backend/requirements.txt
 
