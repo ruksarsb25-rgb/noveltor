@@ -1030,6 +1030,7 @@ def export_poster_pdf_docx():
 
         from utils.poster_pdf_libreoffice import generate_poster_pdf_libreoffice
         from utils.pdf_logos import add_logos_to_pdf
+        from parser.poster_parser import parse_poster
 
         # Convert DOCX to PDF
         try:
@@ -1040,6 +1041,19 @@ def export_poster_pdf_docx():
             print(f"ERROR in PDF generation: {str(e)}")
             print(f"Traceback: {traceback.format_exc()}")
             raise
+
+        # Extract poster metadata and image from DOCX
+        try:
+            poster_data = parse_poster(tmp_path)
+            poster_image = poster_data.get("poster_image", "")
+
+            # Add poster image as overlay on first page
+            if poster_image:
+                from utils.pdf_logos import add_logos_to_pdf
+                # Use the image embedding system to add poster as "publisher logo"
+                pdf_bytes = add_logos_to_pdf(pdf_bytes, "", poster_image)
+        except Exception as e:
+            print(f"Warning: Could not embed poster image: {e}")
 
         # Add logos if provided
         if journal_logo or publisher_logo:
