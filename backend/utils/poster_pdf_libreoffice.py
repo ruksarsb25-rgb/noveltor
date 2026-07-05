@@ -19,6 +19,8 @@ def generate_poster_pdf_libreoffice(docx_path: str) -> bytes:
     Returns:
         PDF file as bytes
     """
+    import platform
+
     docx_path = Path(docx_path)
 
     if not docx_path.exists():
@@ -27,7 +29,14 @@ def generate_poster_pdf_libreoffice(docx_path: str) -> bytes:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
 
-        libreoffice_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+        # Detect LibreOffice path based on OS
+        system = platform.system()
+        if system == "Darwin":
+            # macOS
+            libreoffice_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+        else:
+            # Linux and others - use 'soffice' from PATH
+            libreoffice_path = "soffice"
 
         try:
             # Convert DOCX to PDF using LibreOffice
@@ -57,7 +66,9 @@ def generate_poster_pdf_libreoffice(docx_path: str) -> bytes:
 
         except FileNotFoundError:
             raise Exception(
-                "LibreOffice not found. Please install: brew install libreoffice"
+                "LibreOffice not found. Please install: "
+                "(macOS) brew install libreoffice OR "
+                "(Linux) apt-get install libreoffice"
             )
         except subprocess.TimeoutExpired:
             raise Exception("LibreOffice conversion timed out")
