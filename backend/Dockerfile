@@ -10,6 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
+# LaTeX for poster PDF generation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    cm-super \
+    dvipng \
+    && rm -rf /var/lib/apt/lists/*
+
 # LibreOffice needs its recommends to install cleanly
 RUN apt-get update && apt-get install -y \
     libreoffice \
