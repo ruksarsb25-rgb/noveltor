@@ -1009,6 +1009,30 @@ def export_poster_html():
         return jsonify({"error": f"Poster HTML generation failed: {str(e)}"}), 500
 
 
+@app.route("/export/poster-pdf", methods=["POST"])
+def export_poster_pdf_json():
+    """Export poster as PDF from JSON data (parsed poster metadata)"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    try:
+        from utils.poster_pdf_json import generate_poster_pdf_from_json
+
+        journal_logo = data.get("journal_logo", "")
+        publisher_logo = data.get("publisher_logo", "")
+
+        pdf_bytes = generate_poster_pdf_from_json(data, journal_logo, publisher_logo)
+
+        slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.pdf"'
+        return resp
+    except Exception as e:
+        return jsonify({"error": f"Poster PDF generation failed: {str(e)}"}), 500
+
+
 @app.route("/export/poster-pdf-docx", methods=["POST"])
 def export_poster_pdf_docx():
     """Export poster as PDF using LibreOffice (converts DOCX with embedded images and logos)"""

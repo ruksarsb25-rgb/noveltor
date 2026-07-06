@@ -362,6 +362,96 @@ export default function ExportScreen({ article }) {
     }
   };
 
+  // Poster PDF export
+  const [posterPdfLoading, setPosterPdfLoading] = useState(false);
+
+  const downloadPosterPdf = async () => {
+    setPosterPdfLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/poster-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Poster PDF generation failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "poster").replace(/\s+/g, "_").slice(0, 60)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Poster PDF downloaded");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setPosterPdfLoading(false);
+    }
+  };
+
+  // Poster HTML export
+  const [posterHtmlLoading, setPosterHtmlLoading] = useState(false);
+
+  const downloadPosterHtml = async () => {
+    setPosterHtmlLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/poster-html`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Poster HTML generation failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "poster").replace(/\s+/g, "_").slice(0, 60)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Poster HTML downloaded");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setPosterHtmlLoading(false);
+    }
+  };
+
+  // Poster Web ZIP export
+  const [posterWebLoading, setPosterWebLoading] = useState(false);
+
+  const downloadPosterWeb = async () => {
+    setPosterWebLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/poster-web`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Poster web export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "poster").replace(/\s+/g, "_").slice(0, 60)}_web.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Poster web exported");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setPosterWebLoading(false);
+    }
+  };
+
   const downloadHtml = async () => {
     setHtmlLoading(true);
     try {
@@ -495,24 +585,40 @@ export default function ExportScreen({ article }) {
           <div className="w-px h-6 bg-slate-300 mx-1 self-center" />
 
           {/* ── Downloads ── */}
-          <ToolBtn primary onClick={downloadXml} disabled={!xml}>
-            ⬇ XML
-          </ToolBtn>
-          <ToolBtn primary onClick={downloadXmlZip} disabled={xmlZipLoading} loading={xmlZipLoading} loadingLabel="Packaging…">
-            ⬇ XML + Images
-          </ToolBtn>
-          <ToolBtn primary onClick={downloadHtml} disabled={htmlLoading} loading={htmlLoading} loadingLabel="Building…">
-            ⬇ HTML
-          </ToolBtn>
-          <ToolBtn primary onClick={downloadWebZip} disabled={webLoading} loading={webLoading} loadingLabel="Zipping…">
-            ⬇ Web ZIP
-          </ToolBtn>
-          <ToolBtn primary onClick={downloadPdf} disabled={pdfLoading} loading={pdfLoading} loadingLabel="Rendering…">
-            ⬇ PDF
-          </ToolBtn>
-          <ToolBtn primary onClick={downloadWord} disabled={wordLoading} loading={wordLoading} loadingLabel="Exporting…">
-            ⬇ Word
-          </ToolBtn>
+          {article.type === "poster" ? (
+            <>
+              <ToolBtn primary onClick={downloadPosterPdf} disabled={posterPdfLoading} loading={posterPdfLoading} loadingLabel="Compiling…">
+                ⬇ Poster PDF
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadPosterHtml} disabled={posterHtmlLoading} loading={posterHtmlLoading} loadingLabel="Building…">
+                ⬇ Poster HTML
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadPosterWeb} disabled={posterWebLoading} loading={posterWebLoading} loadingLabel="Zipping…">
+                ⬇ Web ZIP
+              </ToolBtn>
+            </>
+          ) : (
+            <>
+              <ToolBtn primary onClick={downloadXml} disabled={!xml}>
+                ⬇ XML
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadXmlZip} disabled={xmlZipLoading} loading={xmlZipLoading} loadingLabel="Packaging…">
+                ⬇ XML + Images
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadHtml} disabled={htmlLoading} loading={htmlLoading} loadingLabel="Building…">
+                ⬇ HTML
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadWebZip} disabled={webLoading} loading={webLoading} loadingLabel="Zipping…">
+                ⬇ Web ZIP
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadPdf} disabled={pdfLoading} loading={pdfLoading} loadingLabel="Rendering…">
+                ⬇ PDF
+              </ToolBtn>
+              <ToolBtn primary onClick={downloadWord} disabled={wordLoading} loading={wordLoading} loadingLabel="Exporting…">
+                ⬇ Word
+              </ToolBtn>
+            </>
+          )}
 
         </div>
       </div>
