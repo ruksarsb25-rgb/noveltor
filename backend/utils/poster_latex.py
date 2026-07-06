@@ -61,13 +61,17 @@ class PosterLaTeXGenerator:
 
     def save_image_file(self, tmpdir) -> str:
         """
-        Save and convert image (EMF → PNG) for LaTeX inclusion.
+        Save and convert image to PNG for LaTeX inclusion.
+        Handles EMF, PNG, JPEG, and other Pillow-supported formats.
+        Resizes large images to prevent issues.
         Returns filename if successful, empty string otherwise.
         """
         if not self.poster_image:
             return ""
 
         try:
+            from PIL import Image
+
             # Decode base64
             image_data = self.poster_image
             if "," in image_data:
@@ -75,36 +79,46 @@ class PosterLaTeXGenerator:
 
             image_bytes = base64.b64decode(image_data)
 
-            # Save raw image
+            # Try to open and convert with Pillow
             tmpdir = Path(tmpdir)
-            raw_image_path = tmpdir / "poster_raw.emf"
-            raw_image_path.write_bytes(image_bytes)
+            img = Image.open(io.BytesIO(image_bytes))
 
-            # Convert EMF to PNG using ImageMagick
+            # Resize if too large (prevent issues with LaTeX)
+            max_dim = 4000
+            if img.width > max_dim or img.height > max_dim:
+                ratio = min(max_dim / img.width, max_dim / img.height)
+                new_size = (int(img.width * ratio), int(img.height * ratio))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+            # Convert to RGB if necessary (for JPEG compatibility)
+            if img.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                img = background
+
+            # Save as PNG
             png_path = tmpdir / "poster.png"
+            img.save(png_path, format="PNG", optimize=True)
+
+            if png_path.exists():
+                return "poster.png"
+
+            return ""
+
+        except Exception as e:
+            # Fallback: if all else fails, try to save raw and use EMF directly
             try:
-                # Try newer 'magick' command first (ImageMagick v7+)
-                subprocess.run(
-                    ["magick", str(raw_image_path), str(png_path)],
-                    capture_output=True,
-                    timeout=60,
-                    check=True
-                )
-                if png_path.exists():
-                    return "poster.png"
-            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                # If conversion fails, try using the image as-is
-                pass
-
-            # Fallback: if conversion failed, check if it's already a supported format
-            # Try to use raw file directly
-            if raw_image_path.exists():
-                return "poster_raw.emf"
-
-            return ""
-
-        except Exception:
-            return ""
+                tmpdir = Path(tmpdir)
+                image_data = self.poster_image
+                if "," in image_data:
+                    image_data = image_data.split(",")[1]
+                image_bytes = base64.b64decode(image_data)
+                raw_path = tmpdir / "poster_raw.emf"
+                raw_path.write_bytes(image_bytes)
+                # EMF files don't work directly in pdflatex, so return empty
+                return ""
+            except Exception:
+                return ""
 
     def generate(self, tmpdir=None) -> str:
         """
