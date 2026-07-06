@@ -105,7 +105,7 @@ def add_logos_to_pdf(pdf_bytes: bytes, journal_logo: str = "", publisher_logo: s
 
 
 def _base64_to_temp_file(base64_str: str) -> str:
-    """Convert base64 string to temporary image file."""
+    """Convert base64 string to temporary image file, resizing if needed."""
     try:
         # Handle data URI format
         if "," in base64_str:
@@ -113,9 +113,21 @@ def _base64_to_temp_file(base64_str: str) -> str:
 
         image_bytes = base64.b64decode(base64_str)
 
+        # Open image and resize if too large
+        img = Image.open(io.BytesIO(image_bytes))
+
+        # Limit to reasonable dimensions (max 4000x4000 pixels)
+        max_dim = 4000
+        if img.width > max_dim or img.height > max_dim:
+            ratio = min(max_dim / img.width, max_dim / img.height)
+            new_size = (int(img.width * ratio), int(img.height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            print(f"[IMAGE] Resized from {img.width}x{img.height} to {new_size}")
+
         # Save to temp file
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(image_bytes)
+            img.save(tmp, format='PNG', optimize=True)
+            tmp.flush()
             return tmp.name
     except Exception as e:
         print(f"Warning: Could not convert base64 to image: {e}")
