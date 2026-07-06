@@ -31,6 +31,7 @@ export default function App() {
 
     setArticle((prev) => ({
       ...prev,
+      type: parsed.type || prev.type,
       title: parsed.title || prev.title,
       authors: parsed.authors?.length ? parsed.authors : prev.authors,
       abstract: parsed.abstract || prev.abstract,
