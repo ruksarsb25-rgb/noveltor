@@ -29,6 +29,13 @@ export default function App() {
       return;
     }
 
+    console.log("[APP] Parsed document:", {
+      type: parsed.type,
+      title: parsed.title?.substring(0, 50),
+      hasImage: !!parsed.poster_image,
+      imageSize: parsed.poster_image ? parsed.poster_image.length : 0,
+    });
+
     setArticle((prev) => ({
       ...prev,
       type: parsed.type || prev.type,
