@@ -15,13 +15,19 @@ function saveToRecentDocuments(data, fileName, docMode) {
 
     const docTypeLabel = DOC_MODES.find(m => m.value === docMode)?.label || docMode;
 
+    // Don't store large poster images in recent documents (can be > 90MB)
+    const dataToStore = { ...data };
+    if (dataToStore.poster_image && dataToStore.poster_image.length > 1000000) {
+      dataToStore.poster_image = "";
+    }
+
     const newDoc = {
       title: data.title || "Untitled",
       docType: docTypeLabel,
       fileName: fileName,
       uploadDate: Date.now(),
       version: 1,
-      data: data,
+      data: dataToStore,
     };
 
     // Add to front and keep only last 10
