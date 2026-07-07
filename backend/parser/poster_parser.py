@@ -140,9 +140,40 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
     for rel in doc.part.rels.values():
         if "image" in rel.target_ref:
             try:
+                from PIL import Image
+                import io as io_module
+
                 image_part = rel.target_part
                 image_bytes = image_part.blob
-                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                # Convert to PIL Image to resize if too large
+                try:
+                    img = Image.open(io_module.BytesIO(image_bytes))
+
+                    # Resize if too large (max 2000x2000 to keep base64 reasonable)
+                    max_dim = 2000
+                    if img.width > max_dim or img.height > max_dim:
+                        ratio = min(max_dim / img.width, max_dim / img.height)
+                        new_size = (int(img.width * ratio), int(img.height * ratio))
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+                    # Convert to RGB and save as PNG
+                    if img.mode in ("RGBA", "LA", "P"):
+                        background = Image.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "RGBA":
+                            background.paste(img, mask=img.split()[-1])
+                        else:
+                            background.paste(img)
+                        img = background
+
+                    # Encode as PNG (smaller than EMF)
+                    png_bytes = io_module.BytesIO()
+                    img.save(png_bytes, format="PNG", optimize=True)
+                    image_base64 = base64.b64encode(png_bytes.getvalue()).decode("utf-8")
+                except Exception:
+                    # Fallback: just base64 encode raw bytes if PIL conversion fails
+                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
                 # Use first image found as poster
                 poster_image = image_base64
                 break
