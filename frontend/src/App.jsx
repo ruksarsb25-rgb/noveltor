@@ -39,6 +39,7 @@ export default function App() {
       sections: parsed.sections || prev.sections,
       references: parsed.references || prev.references,
       figures: parsed.figures || prev.figures,
+      poster_image: parsed.poster_image || prev.poster_image,
       journal_name: NFP_DEFAULTS.journal_name,
       publisher_name: NFP_DEFAULTS.publisher_name,
       publisher_loc: NFP_DEFAULTS.publisher_loc,
