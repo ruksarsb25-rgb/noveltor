@@ -133,7 +133,12 @@ export function sectionFigureBlocks(sec) {
 
 export function saveDraft(article) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(article));
+    // Don't save huge poster images to localStorage (they can be > 90MB)
+    const draftToSave = { ...article };
+    if (draftToSave.poster_image && draftToSave.poster_image.length > 1000000) {
+      draftToSave.poster_image = ""; // Remove large images
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(draftToSave));
   } catch (e) {
     console.warn("Could not save draft:", e);
   }
