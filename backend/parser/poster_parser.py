@@ -148,6 +148,8 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
 
                 # Convert to PIL Image to resize if too large
                 try:
+                    # Disable decompression bomb check for large images
+                    Image.MAX_IMAGE_PIXELS = None
                     img = Image.open(io_module.BytesIO(image_bytes))
 
                     # Resize if too large (max 2000x2000 to keep base64 reasonable)
