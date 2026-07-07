@@ -367,6 +367,11 @@ export default function ExportScreen({ article }) {
 
   const downloadPosterPdf = async () => {
     setPosterPdfLoading(true);
+    console.log("[EXPORT] Sending poster article:", {
+      type: article.type,
+      hasPosterImage: !!article.poster_image,
+      posterImageSize: article.poster_image ? article.poster_image.length : 0,
+    });
     try {
       const res = await fetch(`${API_BASE}/export/poster-pdf`, {
         method: "POST",
