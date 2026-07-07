@@ -25,6 +25,9 @@ export const SECTION_TYPES = [
 
 export function defaultArticle() {
   return {
+    // Document type
+    type: "", // "article" or "poster"
+
     // Metadata
     title: "",
     authors: [defaultAuthor()],
@@ -52,6 +55,9 @@ export function defaultArticle() {
     // Logos (base64 data URIs, set by user upload)
     journal_logo: "",
     brand_logo: "",
+
+    // Poster-specific
+    poster_image: "", // Base64 encoded image for poster documents
 
     // Content
     sections: [],
