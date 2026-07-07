@@ -7,8 +7,11 @@ Page 2: Poster image (converted from EMF to PNG if needed)
 import base64
 import io
 import subprocess
+import logging
 from typing import Dict, Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class PosterLaTeXGenerator:
@@ -67,7 +70,7 @@ class PosterLaTeXGenerator:
         Returns filename if successful, empty string otherwise.
         """
         if not self.poster_image:
-            print("[POSTER] No poster_image data provided")
+            logger.info("[POSTER] No poster_image data provided")
             return ""
 
         try:
@@ -79,12 +82,12 @@ class PosterLaTeXGenerator:
                 image_data = image_data.split(",")[1]
 
             image_bytes = base64.b64decode(image_data)
-            print(f"[POSTER] Decoded image: {len(image_bytes)} bytes")
+            logger.info(f"[POSTER] Decoded image: {len(image_bytes)} bytes")
 
             # Try to open and convert with Pillow
             tmpdir = Path(tmpdir)
             img = Image.open(io.BytesIO(image_bytes))
-            print(f"[POSTER] Image opened: {img.format} {img.width}x{img.height} {img.mode}")
+            logger.info(f"[POSTER] Image opened: {img.format} {img.width}x{img.height} {img.mode}")
 
             # Resize if too large (prevent issues with LaTeX)
             max_dim = 4000
@@ -92,30 +95,28 @@ class PosterLaTeXGenerator:
                 ratio = min(max_dim / img.width, max_dim / img.height)
                 new_size = (int(img.width * ratio), int(img.height * ratio))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
-                print(f"[POSTER] Resized to: {new_size}")
+                logger.info(f"[POSTER] Resized to: {new_size}")
 
             # Convert to RGB if necessary (for JPEG compatibility)
             if img.mode in ("RGBA", "LA", "P"):
                 background = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
                 img = background
-                print(f"[POSTER] Converted to RGB")
+                logger.info(f"[POSTER] Converted to RGB")
 
             # Save as PNG
             png_path = tmpdir / "poster.png"
             img.save(png_path, format="PNG", optimize=True)
-            print(f"[POSTER] Saved PNG: {png_path}")
+            logger.info(f"[POSTER] Saved PNG: {png_path}")
 
             if png_path.exists():
-                print(f"[POSTER] PNG file exists, returning filename")
+                logger.info(f"[POSTER] PNG file exists, returning filename")
                 return "poster.png"
 
             return ""
 
         except Exception as e:
-            print(f"[POSTER] Error processing image: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[POSTER] Error processing image: {e}", exc_info=True)
             # Fallback: if all else fails, try to save raw and use EMF directly
             try:
                 tmpdir = Path(tmpdir)
@@ -125,11 +126,11 @@ class PosterLaTeXGenerator:
                 image_bytes = base64.b64decode(image_data)
                 raw_path = tmpdir / "poster_raw.emf"
                 raw_path.write_bytes(image_bytes)
-                print(f"[POSTER] Saved raw EMF fallback")
+                logger.info(f"[POSTER] Saved raw EMF fallback")
                 # EMF files don't work directly in pdflatex, so return empty
                 return ""
             except Exception as e2:
-                print(f"[POSTER] Fallback also failed: {e2}")
+                logger.error(f"[POSTER] Fallback also failed: {e2}", exc_info=True)
                 return ""
 
     def generate(self, tmpdir=None) -> str:
