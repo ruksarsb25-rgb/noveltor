@@ -1028,6 +1028,11 @@ def export_poster_pdf_json():
     logger.info(f"[POSTER-PDF] Title: {data.get('title')}")
     logger.info(f"[POSTER-PDF] Authors: {len(data.get('authors', []))} author(s)")
 
+    # Skip large images (> 10MB base64) to avoid memory issues
+    if len(poster_image) > 10 * 1024 * 1024:
+        logger.warning(f"[POSTER-PDF] Image too large ({len(poster_image)} bytes), skipping")
+        data["poster_image"] = ""
+
     try:
         from utils.poster_pdf_json import generate_poster_pdf_from_json
 
