@@ -9,8 +9,98 @@ Expected document structure:
 
 import base64
 import io
+import subprocess
+import tempfile
+import os
+from pathlib import Path
 from docx import Document
 from typing import Dict, Any
+
+
+def _convert_image_via_libreoffice(image_bytes: bytes) -> str:
+    """
+    Convert large images (EMF, etc) to PNG via LibreOffice.
+    Returns base64-encoded PNG or empty string if conversion fails.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+
+            # Save raw image
+            input_path = tmpdir / "image.emf"
+            input_path.write_bytes(image_bytes)
+
+            # Convert to PNG via LibreOffice with size limit
+            output_path = tmpdir / "image.png"
+
+            # Use LibreOffice to convert
+            soffice_path = _find_soffice()
+            if not soffice_path:
+                return ""
+
+            cmd = [
+                soffice_path,
+                "--headless",
+                "--convert-to", "png",
+                "--outdir", str(tmpdir),
+                str(input_path),
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+
+            if result.returncode != 0 or not output_path.exists():
+                return ""
+
+            # Read PNG and resize if needed
+            png_bytes = output_path.read_bytes()
+
+            # If still too large, resize with PIL
+            if len(png_bytes) > 2 * 1024 * 1024:
+                try:
+                    from PIL import Image
+
+                    img = Image.open(io.BytesIO(png_bytes))
+                    max_dim = 1024
+                    if img.width > max_dim or img.height > max_dim:
+                        ratio = min(max_dim / img.width, max_dim / img.height)
+                        new_size = (int(img.width * ratio), int(img.height * ratio))
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+                    # Re-encode as optimized PNG
+                    optimized = io.BytesIO()
+                    img.save(optimized, format="PNG", optimize=True, quality=85)
+                    png_bytes = optimized.getvalue()
+                except Exception:
+                    pass  # Use PNG as-is if PIL fails
+
+            # Base64 encode
+            return base64.b64encode(png_bytes).decode("utf-8")
+
+    except Exception:
+        return ""
+
+
+def _find_soffice() -> str:
+    """Find LibreOffice soffice command."""
+    import platform
+
+    if platform.system() == "Darwin":  # macOS
+        paths = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        ]
+    else:  # Linux
+        paths = ["/usr/bin/soffice", "/usr/local/bin/soffice"]
+
+    for path in paths:
+        if os.path.exists(path):
+            return path
+
+    # Try in PATH
+    result = subprocess.run(["which", "soffice"], capture_output=True, text=True)
+    if result.returncode == 0:
+        return result.stdout.strip()
+
+    return ""
 
 
 def parse_poster(docx_path: str) -> Dict[str, Any]:
@@ -142,10 +232,18 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
             try:
                 image_part = rel.target_part
                 image_bytes = image_part.blob
-                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                # Use first image found as poster
-                poster_image = image_base64
-                break
+
+                # If image is small (<5MB), use as-is. Otherwise convert via LibreOffice
+                if len(image_bytes) < 5 * 1024 * 1024:
+                    # Small image, just base64 encode
+                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                else:
+                    # Large image (probably EMF), convert to PNG via LibreOffice
+                    image_base64 = _convert_image_via_libreoffice(image_bytes)
+
+                if image_base64:
+                    poster_image = image_base64
+                    break
             except Exception:
                 continue
 
