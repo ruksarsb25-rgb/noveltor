@@ -1016,6 +1016,13 @@ def export_poster_pdf_json():
     if not data:
         return jsonify({"error": "No JSON body provided"}), 400
 
+    # Debug logging
+    print(f"[POSTER-PDF] Received data fields: {list(data.keys())}")
+    poster_image = data.get("poster_image", "")
+    print(f"[POSTER-PDF] poster_image size: {len(poster_image)} bytes")
+    print(f"[POSTER-PDF] Title: {data.get('title')}")
+    print(f"[POSTER-PDF] Authors: {len(data.get('authors', []))} author(s)")
+
     try:
         from utils.poster_pdf_json import generate_poster_pdf_from_json
 
@@ -1023,6 +1030,7 @@ def export_poster_pdf_json():
         publisher_logo = data.get("publisher_logo", "")
 
         pdf_bytes = generate_poster_pdf_from_json(data, journal_logo, publisher_logo)
+        print(f"[POSTER-PDF] Generated PDF: {len(pdf_bytes)} bytes")
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"
         resp = make_response(pdf_bytes)
