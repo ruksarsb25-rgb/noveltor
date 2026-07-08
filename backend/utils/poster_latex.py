@@ -148,14 +148,14 @@ class PosterLaTeXGenerator:
             image_filename = self.save_image_file(tmpdir)
 
         latex = r"""\documentclass[12pt,a4paper]{article}
-\usepackage[margin=0.5in]{geometry}
+\usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{setspace}
 \usepackage{array}
 \usepackage{fancyhdr}
 \pagestyle{empty}
-\setstretch{1.2}
+\setstretch{1.15}
 
 \title{}
 \author{}
@@ -166,26 +166,22 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Header with logos and title - centered
+        # Header with logos and title
+        latex += "\\vspace*{-0.3in}\n"
         latex += "\\begin{center}\n"
-        latex += "\\noindent\\begin{tabular}{ccc}\n"
 
-        # Left logo
-        if tmpdir and (tmpdir / "journal_logo.png").exists():
-            latex += "\\includegraphics[height=0.8cm]{journal_logo.png} &\n"
-        else:
-            latex += "&\n"
+        # Title
+        latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n\n"
 
-        # Center title
-        latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}} &\n"
+        # Logos (optional, displayed below title if present)
+        if tmpdir and ((tmpdir / "journal_logo.png").exists() or (tmpdir / "brand_logo.png").exists()):
+            latex += "\\begin{tabular}{cc}\n"
+            if tmpdir and (tmpdir / "journal_logo.png").exists():
+                latex += "\\includegraphics[height=0.6cm]{journal_logo.png} & "
+            if tmpdir and (tmpdir / "brand_logo.png").exists():
+                latex += "\\includegraphics[height=0.6cm]{brand_logo.png}"
+            latex += "\n\\end{tabular}\n\n"
 
-        # Right logo
-        if tmpdir and (tmpdir / "brand_logo.png").exists():
-            latex += "\\includegraphics[height=0.8cm]{brand_logo.png}\n"
-        else:
-            latex += "\n"
-
-        latex += "\\end{tabular}\n"
         latex += "\\end{center}\n\n"
 
         # Authors and affiliations - grouped format
@@ -229,15 +225,14 @@ class PosterLaTeXGenerator:
             latex += "\\section*{Abstract}\n"
             latex += f"{self.escape_latex(self.abstract)}\n\n"
 
-        # Poster image - fills entire page
+        # Poster image - dedicated page
         if image_filename:
             latex += "\\newpage\n"
             latex += "\\thispagestyle{empty}\n"
-            latex += "\\vspace*{\\fill}\n"
             latex += "\\begin{center}\n"
-            latex += f"\\includegraphics[width=1.0\\textwidth,height=0.95\\textheight,keepaspectratio]{{{image_filename}}}\n"
+            latex += "\\vspace*{0.5in}\n"
+            latex += f"\\includegraphics[width=7in,height=9.5in,keepaspectratio]{{{image_filename}}}\n"
             latex += "\\end{center}\n"
-            latex += "\\vspace*{\\fill}\n\n"
 
         # References
         if hasattr(self, 'references') and self.references:

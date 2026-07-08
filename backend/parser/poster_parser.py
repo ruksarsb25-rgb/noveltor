@@ -225,13 +225,18 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
             if ref_text:  # Skip empty lines
                 references.append({"raw_text": ref_text})
 
-    # Extract embedded images and convert to base64
+    # Extract embedded images: take the LARGEST one as poster_image (skip small logos)
     poster_image = ""
+    largest_size = 0
     for rel in doc.part.rels.values():
         if "image" in rel.target_ref:
             try:
                 image_part = rel.target_part
                 image_bytes = image_part.blob
+
+                # Skip very small images (likely logos < 100KB)
+                if len(image_bytes) < 100 * 1024:
+                    continue
 
                 # If image is small (<5MB), use as-is. Otherwise convert via LibreOffice
                 if len(image_bytes) < 5 * 1024 * 1024:
@@ -241,9 +246,10 @@ def parse_poster(docx_path: str) -> Dict[str, Any]:
                     # Large image (probably EMF), convert to PNG via LibreOffice
                     image_base64 = _convert_image_via_libreoffice(image_bytes)
 
-                if image_base64:
+                # Keep the largest image as poster_image
+                if image_base64 and len(image_bytes) > largest_size:
                     poster_image = image_base64
-                    break
+                    largest_size = len(image_bytes)
             except Exception:
                 continue
 

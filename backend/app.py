@@ -1023,15 +1023,20 @@ def export_poster_pdf_json():
 
     # Debug logging
     logger.info(f"[POSTER-PDF] Received data fields: {list(data.keys())}")
+    doc_type = data.get("type", "unknown")
+    logger.info(f"[POSTER-PDF] Document type: {doc_type}")
     poster_image = data.get("poster_image", "")
     logger.info(f"[POSTER-PDF] poster_image size: {len(poster_image)} bytes")
     logger.info(f"[POSTER-PDF] Title: {data.get('title')}")
     logger.info(f"[POSTER-PDF] Authors: {len(data.get('authors', []))} author(s)")
+    logger.info(f"[POSTER-PDF] Abstract length: {len(data.get('abstract', ''))} chars")
 
     # Skip large images (> 10MB base64) to avoid memory issues
     if len(poster_image) > 10 * 1024 * 1024:
-        logger.warning(f"[POSTER-PDF] Image too large ({len(poster_image)} bytes), skipping")
+        logger.warning(f"[POSTER-PDF] Image too large ({len(poster_image)} bytes), clearing")
         data["poster_image"] = ""
+    elif len(poster_image) == 0:
+        logger.warning(f"[POSTER-PDF] No poster image provided!")
 
     try:
         from utils.poster_pdf_json import generate_poster_pdf_from_json

@@ -48,7 +48,7 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
         image_size_mb = len(poster_image) / (1024 * 1024)
         if image_size_mb > 50:
             # Image too large for web preview, show placeholder
-            image_tag = f'<div class="poster-placeholder"><p>Poster Image ({image_size_mb:.1f} MB)</p><p style="font-size: 0.9em; color: #999;">Image too large for web preview. Download Word, PDF, or HTML for full image.</p></div>'
+            image_tag = f'<div class="poster-placeholder"><p>📊 Poster Image ({image_size_mb:.1f} MB)</p><p style="font-size: 0.9em; color: #999;">Image too large for web preview. Download PDF for the complete poster.</p></div>'
         else:
             # Include smaller images
             if poster_image.startswith("data:"):
@@ -58,6 +58,9 @@ def generate_poster_html(poster: Dict[str, Any]) -> str:
             else:
                 # Base64 encoded
                 image_tag = f'<img src="data:image/png;base64,{poster_image}" alt="Poster" class="poster-image">'
+    else:
+        # No image provided
+        image_tag = '<div class="poster-placeholder"><p>📋 No Poster Image</p><p style="font-size: 0.9em; color: #999;">The poster image was not provided in the document.</p></div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
