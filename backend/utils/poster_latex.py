@@ -228,19 +228,9 @@ class PosterLaTeXGenerator:
         # Abstract
         if self.abstract:
             latex += "\\section*{Abstract}\n"
-            latex += f"{self.escape_latex(self.abstract)}\n"
-            latex += "\\vspace{0.2in}\n"
+            latex += f"{self.escape_latex(self.abstract)}\n\n"
 
-        # Poster image - dedicated page (no blank pages)
-        if image_filename:
-            latex += "\\clearpage\n"
-            latex += "\\thispagestyle{empty}\n"
-            latex += "\\begin{center}\n"
-            latex += "\\vspace*{0.3in}\n"
-            latex += f"\\includegraphics[width=7in,height=9in,keepaspectratio]{{{image_filename}}}\n"
-            latex += "\\end{center}\n"
-
-        # References
+        # References (on page 1, before poster image)
         if hasattr(self, 'references') and self.references:
             latex += "\\section*{References}\n"
             latex += "\\begin{enumerate}\n"
@@ -248,6 +238,16 @@ class PosterLaTeXGenerator:
                 ref_text = ref.get("raw_text") if isinstance(ref, dict) else str(ref)
                 latex += f"\\item {self.escape_latex(ref_text)}\n"
             latex += "\\end{enumerate}\n\n"
+
+        # Poster image - start on new page (page 2)
+        if image_filename:
+            latex += "\\newpage\n"
+            latex += "\\thispagestyle{empty}\n"
+            latex += "\\null\n"
+            latex += "\\begin{center}\n"
+            latex += "\\vspace*{0.5in}\n"
+            latex += f"\\includegraphics[width=6.5in,height=8.5in,keepaspectratio]{{{image_filename}}}\n"
+            latex += "\\end{center}\n"
 
         latex += "\\end{document}\n"
 
