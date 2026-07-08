@@ -192,11 +192,11 @@ class PosterLaTeXGenerator:
             latex += "\\section*{Abstract}\n"
             latex += f"{self.escape_latex(self.abstract)}\n\n"
 
-        # Poster image - before references
+        # Poster image - full page
         if image_filename:
+            latex += "\\newpage\n"
             latex += "\\begin{center}\n"
-            latex += "\\vspace{0.3cm}\n"
-            latex += f"\\includegraphics[width=0.85\\textwidth,height=0.4\\textheight,keepaspectratio]{{{image_filename}}}\n"
+            latex += f"\\includegraphics[width=\\textwidth,height=\\textheight,keepaspectratio]{{{image_filename}}}\n"
             latex += "\\end{center}\n\n"
 
         # References
