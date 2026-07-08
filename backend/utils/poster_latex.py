@@ -152,6 +152,7 @@ class PosterLaTeXGenerator:
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{setspace}
+\usepackage{array}
 \usepackage{fancyhdr}
 \pagestyle{empty}
 \setstretch{1.2}
@@ -164,10 +165,25 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Title - centered, large, with spacing
-        latex += "\\begin{center}\n"
+        # Header with logos and title - using minipages to prevent overlap
+        latex += "\\noindent\\begin{minipage}[t]{0.15\\textwidth}\n"
+        latex += "\\vspace{0pt}\n"
+        if self.poster.get("journal_logo"):
+            latex += "\\includegraphics[width=\\textwidth]{journal_logo.png}\n"
+        latex += "\\end{minipage}\n"
+        latex += "\\hfill\n"
+        latex += "\\begin{minipage}[t]{0.7\\textwidth}\n"
+        latex += "\\vspace{0pt}\n"
+        latex += "\\centering\n"
         latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n"
-        latex += "\\end{center}\n\n"
+        latex += "\\end{minipage}\n"
+        latex += "\\hfill\n"
+        latex += "\\begin{minipage}[t]{0.15\\textwidth}\n"
+        latex += "\\vspace{0pt}\n"
+        latex += "\\raggedleft\n"
+        if self.poster.get("brand_logo"):
+            latex += "\\includegraphics[width=\\textwidth]{brand_logo.png}\n"
+        latex += "\\end{minipage}\n\n"
 
         # Authors and affiliations - grouped format
         if self.authors:
