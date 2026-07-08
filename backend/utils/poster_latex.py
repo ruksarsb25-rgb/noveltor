@@ -169,21 +169,39 @@ class PosterLaTeXGenerator:
         latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n"
         latex += "\\end{center}\n\n"
 
-        # Authors - centered with affiliations
+        # Authors and affiliations - grouped format
         if self.authors:
             latex += "\\begin{center}\n"
-            for i, author in enumerate(self.authors):
+
+            # Authors on one line
+            author_names = []
+            for author in self.authors:
                 first_name = author.get("first_name", "").strip()
                 last_name = author.get("last_name", "").strip()
-                affiliation = author.get("affiliation", "").strip()
-
                 name = f"{first_name} {last_name}".strip()
                 if name:
-                    latex += f"\\textbf{{{self.escape_latex(name)}}}\\\\\n"
-                    if affiliation:
-                        latex += f"{{\\small \\textit{{{self.escape_latex(affiliation)}}}}}\\\\\n"
-                    if i < len(self.authors) - 1:
-                        latex += "\\vspace{0.1cm}\n"
+                    author_names.append(self.escape_latex(name))
+
+            if author_names:
+                latex += ", ".join(author_names) + "\n\n"
+
+            # Unique affiliations
+            affiliations = []
+            for author in self.authors:
+                affiliation = author.get("affiliation", "").strip()
+                if affiliation and affiliation not in affiliations:
+                    affiliations.append(affiliation)
+
+            if affiliations:
+                for i, affiliation in enumerate(affiliations):
+                    latex += f"$^{{{i+1}}}${self.escape_latex(affiliation)}\\\\\n"
+
+            # Corresponding author
+            for author in self.authors:
+                email = author.get("email", "").strip()
+                if email and author.get("corresponding"):
+                    latex += f"\n*Corresponding Author: \\texttt{{{self.escape_latex(email)}}}\n"
+                    break
 
             latex += "\\end{center}\n\n"
 
