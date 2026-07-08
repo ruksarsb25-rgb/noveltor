@@ -148,11 +148,13 @@ class PosterLaTeXGenerator:
             image_filename = self.save_image_file(tmpdir)
 
         latex = r"""\documentclass[12pt,a4paper]{article}
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=0.75in]{geometry}
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{setspace}
-\setstretch{1.3}
+\usepackage{fancyhdr}
+\pagestyle{empty}
+\setstretch{1.2}
 
 \title{}
 \author{}
@@ -162,43 +164,49 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Title - larger and centered
-        latex += f"\\section*{{{self.escape_latex(self.title)}}}\n\n"
+        # Title - centered, large, with spacing
+        latex += "\\begin{center}\n"
+        latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n"
+        latex += "\\end{center}\n\n"
 
-        # Authors - with affiliations
+        # Authors - centered with affiliations
         if self.authors:
-            for author in self.authors:
+            latex += "\\begin{center}\n"
+            for i, author in enumerate(self.authors):
                 first_name = author.get("first_name", "").strip()
                 last_name = author.get("last_name", "").strip()
                 affiliation = author.get("affiliation", "").strip()
 
                 name = f"{first_name} {last_name}".strip()
-                latex += f"\\textbf{{{self.escape_latex(name)}}}\n\n"
+                if name:
+                    latex += f"\\textbf{{{self.escape_latex(name)}}}\\\\\n"
+                    if affiliation:
+                        latex += f"{{\\small \\textit{{{self.escape_latex(affiliation)}}}}}\\\\\n"
+                    if i < len(self.authors) - 1:
+                        latex += "\\vspace{0.1cm}\n"
 
-                if affiliation:
-                    latex += f"\\textit{{{self.escape_latex(affiliation)}}}\n\n"
+            latex += "\\end{center}\n\n"
 
         # Abstract
         if self.abstract:
-            latex += "\\section*{Abstract}\n\n"
+            latex += "\\section*{Abstract}\n"
             latex += f"{self.escape_latex(self.abstract)}\n\n"
+
+        # Poster image - before references
+        if image_filename:
+            latex += "\\begin{center}\n"
+            latex += "\\vspace{0.3cm}\n"
+            latex += f"\\includegraphics[width=0.85\\textwidth,height=0.4\\textheight,keepaspectratio]{{{image_filename}}}\n"
+            latex += "\\end{center}\n\n"
 
         # References
         if hasattr(self, 'references') and self.references:
-            latex += "\\section*{References}\n\n"
+            latex += "\\section*{References}\n"
             latex += "\\begin{enumerate}\n"
             for ref in self.references:
                 ref_text = ref.get("raw_text") if isinstance(ref, dict) else str(ref)
                 latex += f"\\item {self.escape_latex(ref_text)}\n"
             latex += "\\end{enumerate}\n\n"
-
-        # Page break before image
-        if image_filename:
-            latex += "\\newpage\n\n"
-            latex += "\\section*{Poster}\n\n"
-            latex += "\\begin{center}\n"
-            latex += f"\\includegraphics[width=0.9\\textwidth]{{{image_filename}}}\n"
-            latex += "\\end{center}\n\n"
 
         latex += "\\end{document}\n"
 
