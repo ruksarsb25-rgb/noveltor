@@ -166,23 +166,28 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Header with logos and title
-        latex += "\\vspace*{-0.3in}\n"
+        # Header: logos on sides, title in center (all on one line)
         latex += "\\begin{center}\n"
+        latex += "\\begin{tabular}{p{1.2in}p{2.5in}p{1.2in}}\n"
 
-        # Title
-        latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n\n"
+        # Left logo
+        if tmpdir and (tmpdir / "journal_logo.png").exists():
+            latex += "\\includegraphics[height=0.7cm,keepaspectratio]{journal_logo.png} & "
+        else:
+            latex += "& "
 
-        # Logos (optional, displayed below title if present)
-        if tmpdir and ((tmpdir / "journal_logo.png").exists() or (tmpdir / "brand_logo.png").exists()):
-            latex += "\\begin{tabular}{cc}\n"
-            if tmpdir and (tmpdir / "journal_logo.png").exists():
-                latex += "\\includegraphics[height=0.6cm]{journal_logo.png} & "
-            if tmpdir and (tmpdir / "brand_logo.png").exists():
-                latex += "\\includegraphics[height=0.6cm]{brand_logo.png}"
-            latex += "\n\\end{tabular}\n\n"
+        # Center: title
+        latex += f"\\centering\\textbf{{\\large {self.escape_latex(self.title)}}} & "
 
-        latex += "\\end{center}\n\n"
+        # Right logo
+        if tmpdir and (tmpdir / "brand_logo.png").exists():
+            latex += "\\includegraphics[height=0.7cm,keepaspectratio]{brand_logo.png}\n"
+        else:
+            latex += "\n"
+
+        latex += "\\end{tabular}\\\\\n"
+        latex += "\\end{center}\n"
+        latex += "\\vspace{0.15in}\n\n"
 
         # Authors and affiliations - grouped format
         if self.authors:
@@ -223,15 +228,16 @@ class PosterLaTeXGenerator:
         # Abstract
         if self.abstract:
             latex += "\\section*{Abstract}\n"
-            latex += f"{self.escape_latex(self.abstract)}\n\n"
+            latex += f"{self.escape_latex(self.abstract)}\n"
+            latex += "\\vspace{0.2in}\n"
 
-        # Poster image - dedicated page
+        # Poster image - dedicated page (no blank pages)
         if image_filename:
-            latex += "\\newpage\n"
+            latex += "\\clearpage\n"
             latex += "\\thispagestyle{empty}\n"
             latex += "\\begin{center}\n"
-            latex += "\\vspace*{0.5in}\n"
-            latex += f"\\includegraphics[width=7in,height=9.5in,keepaspectratio]{{{image_filename}}}\n"
+            latex += "\\vspace*{0.3in}\n"
+            latex += f"\\includegraphics[width=7in,height=9in,keepaspectratio]{{{image_filename}}}\n"
             latex += "\\end{center}\n"
 
         # References
