@@ -168,7 +168,8 @@ class PosterLaTeXGenerator:
         # Header with logos and title - using minipages to prevent overlap
         latex += "\\noindent\\begin{minipage}[t]{0.15\\textwidth}\n"
         latex += "\\vspace{0pt}\n"
-        if self.poster.get("journal_logo"):
+        # Only include logo reference if file exists
+        if tmpdir and (tmpdir / "journal_logo.png").exists():
             latex += "\\includegraphics[width=\\textwidth]{journal_logo.png}\n"
         latex += "\\end{minipage}\n"
         latex += "\\hfill\n"
@@ -181,7 +182,8 @@ class PosterLaTeXGenerator:
         latex += "\\begin{minipage}[t]{0.15\\textwidth}\n"
         latex += "\\vspace{0pt}\n"
         latex += "\\raggedleft\n"
-        if self.poster.get("brand_logo"):
+        # Only include logo reference if file exists
+        if tmpdir and (tmpdir / "brand_logo.png").exists():
             latex += "\\includegraphics[width=\\textwidth]{brand_logo.png}\n"
         latex += "\\end{minipage}\n\n"
 

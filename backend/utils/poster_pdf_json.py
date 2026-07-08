@@ -6,8 +6,22 @@ Simpler than the DOCX approach - works directly with extracted data.
 import io
 import tempfile
 import subprocess
+import base64
 from pathlib import Path
 from typing import Dict, Any
+
+
+def _save_base64_image_to_file(base64_str: str, output_path: Path) -> None:
+    """Save base64 image string to PNG file."""
+    try:
+        # Handle data URI format
+        if "," in base64_str:
+            base64_str = base64_str.split(",")[1]
+
+        image_bytes = base64.b64decode(base64_str)
+        output_path.write_bytes(image_bytes)
+    except Exception:
+        pass  # Fail silently if logo can't be saved
 
 
 def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str = "", publisher_logo: str = "") -> bytes:
@@ -27,6 +41,12 @@ def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
+
+        # Save logos to temp directory if provided
+        if journal_logo:
+            _save_base64_image_to_file(journal_logo, tmpdir / "journal_logo.png")
+        if publisher_logo:
+            _save_base64_image_to_file(publisher_logo, tmpdir / "brand_logo.png")
 
         # Generate LaTeX
         generator = PosterLaTeXGenerator(poster_data)
