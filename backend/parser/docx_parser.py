@@ -4,6 +4,7 @@ Extracts structured metadata and content from academic manuscripts.
 """
 import re
 import html as _html_lib
+import requests
 from docx import Document
 from docx.oxml.ns import qn as _qn
 from utils.equations import extract_equation_text, mathml_from_omml
@@ -31,8 +32,8 @@ _REFS_HEADING_RE = re.compile(r'^(?:\d+[\.\d]*\.?\s+)?references?\s*[;:.,]?\s*$'
 _REF_ENTRY_RE = re.compile(r'^\[?\d+[\]\.]\s+\S')
 # Bullet characters that start a reference item
 _REF_BULLET_RE = re.compile(r'^[•\-\*●◆▪]\s+')
-# DOI in any format: "doi: 10.xxx" or "https://doi.org/10.xxx"
-_DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)([^\s,;<>\)]+)', re.IGNORECASE)
+# DOI in any format: "doi: 10.xxx", "https://doi.org/10.xxx", or bare "10.xxxx/yyyy"
+_DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)?([0-9]{2}\.[0-9]{4}/[^\s,;<>\)]+)', re.IGNORECASE)
 
 _W_TBL     = _qn('w:tbl')
 _W_P       = _qn('w:p')
@@ -829,6 +830,61 @@ def _guess_section_type(heading: str) -> str:
     return "Other"
 
 
+def _lookup_doi_via_crossref(ref_text: str) -> str:
+    """
+    Query CrossRef API to find DOI for a reference without one.
+
+    Extracts authors, title, and year from reference text and queries CrossRef.
+    Returns DOI string if found, empty string otherwise.
+    """
+    try:
+        # Extract title (usually between journal name and other metadata)
+        # Pattern: look for capitalized phrases that are likely titles
+        title_match = re.search(r'([A-Z][^,]*?)[,.]?\s+(?:Journal|Rev|Sci|Proc|Int|Adv|Appl|Chem|Mater|Tech)', ref_text, re.IGNORECASE)
+        if not title_match:
+            return ""
+
+        title = title_match.group(1).strip()
+
+        # Extract year (4-digit number near end of reference)
+        year_match = re.search(r'\b(20\d{2}|19\d{2})\b', ref_text)
+        year = year_match.group(1) if year_match else ""
+
+        # Extract first author (name before first comma)
+        author_match = re.match(r'^([A-Za-z\-]+)\s+([A-Za-z\-]+)', ref_text)
+        author = author_match.group(1) if author_match else ""
+
+        if not title:
+            return ""
+
+        # Query CrossRef API
+        params = {
+            'query.title': title,
+            'rows': 1,
+        }
+        if author:
+            params['query.author'] = author
+        if year:
+            params['query.published'] = year
+
+        response = requests.get(
+            'https://api.crossref.org/works',
+            params=params,
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get('message', {}).get('items', [])
+            if items and len(items) > 0:
+                doi = items[0].get('DOI', '').strip()
+                return doi
+    except Exception:
+        pass  # Fail silently if API unavailable
+
+    return ""
+
+
 def _parse_references(raw_refs: list) -> list:
     """
     Convert raw collected reference strings into structured dicts.
@@ -838,6 +894,7 @@ def _parse_references(raw_refs: list) -> list:
       • Numbered [1]:      "[1] Smith J et al. J Chem. 2020..."
       • Plain paragraph:   "Patel R. Green chemistry. Org Lett. 2021..."
 
+    Attempts to extract DOI from text or via CrossRef API lookup if missing.
     Returns: [{number, raw_text, doi}]
     """
     result = []
@@ -846,16 +903,19 @@ def _parse_references(raw_refs: list) -> list:
         text = _REF_BULLET_RE.sub("", raw)
         text = re.sub(r"^\[?\d+[\]\.]\s+", "", text).strip()
 
-        # Extract DOI: search through the raw text (including any appended hyperlink URLs)
+        # Extract DOI from text (supports: "doi: 10.xxx", "https://doi.org/10.xxx", bare "10.xxxx/yyyy")
         doi = ""
         m = _DOI_RE.search(raw)
         if m:
-            # DOI captured after 'doi:' or 'https://doi.org/'
             doi_str = m.group(1).rstrip(".,;)>").strip()
             # Remove trailing punctuation and whitespace that's common in text
             doi_str = re.sub(r'[\s\.\-_]+$', '', doi_str).strip()
             if doi_str:
                 doi = doi_str
+
+        # If no DOI found in text, try CrossRef API lookup
+        if not doi and text:
+            doi = _lookup_doi_via_crossref(text)
 
         if text:
             result.append({"number": i, "raw_text": text, "doi": doi})
