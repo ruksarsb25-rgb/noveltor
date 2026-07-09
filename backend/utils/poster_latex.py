@@ -166,21 +166,23 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Header: use minipages for reliable side-by-side layout
-        latex += "\\begin{minipage}[c]{0.12\\textwidth}\n"
+        # Header: minipages with \hfill for side-by-side layout
+        # Total width < 100% to allow \hfill spacing
+        latex += "\\begin{minipage}[c]{0.10\\textwidth}\n"
+        latex += "\\centering\n"
         if tmpdir and (tmpdir / "journal_logo.png").exists():
-            latex += "\\includegraphics[width=0.9\\textwidth,keepaspectratio]{journal_logo.png}\n"
+            latex += "\\includegraphics[width=0.95\\textwidth,keepaspectratio]{journal_logo.png}\n"
         latex += "\\end{minipage}\n"
         latex += "\\hfill\n"
-        latex += "\\begin{minipage}[c]{0.76\\textwidth}\n"
+        latex += "\\begin{minipage}[c]{0.72\\textwidth}\n"
         latex += "\\centering\n"
         latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n"
         latex += "\\end{minipage}\n"
         latex += "\\hfill\n"
-        latex += "\\begin{minipage}[c]{0.12\\textwidth}\n"
+        latex += "\\begin{minipage}[c]{0.10\\textwidth}\n"
         latex += "\\centering\n"
         if tmpdir and (tmpdir / "brand_logo.png").exists():
-            latex += "\\includegraphics[width=0.9\\textwidth,keepaspectratio]{brand_logo.png}\n"
+            latex += "\\includegraphics[width=0.95\\textwidth,keepaspectratio]{brand_logo.png}\n"
         latex += "\\end{minipage}\n"
         latex += "\\vspace{0.2in}\n\n"
 

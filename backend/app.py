@@ -1042,9 +1042,9 @@ def export_poster_pdf_json():
         from utils.poster_pdf_json import generate_poster_pdf_from_json
 
         journal_logo = data.get("journal_logo", "")
-        publisher_logo = data.get("publisher_logo", "")
+        brand_logo = data.get("brand_logo", "")
 
-        pdf_bytes = generate_poster_pdf_from_json(data, journal_logo, publisher_logo)
+        pdf_bytes = generate_poster_pdf_from_json(data, journal_logo, brand_logo)
         logger.info(f"[POSTER-PDF] Generated PDF: {len(pdf_bytes)} bytes")
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "poster"))[:60].strip("_") or "poster"

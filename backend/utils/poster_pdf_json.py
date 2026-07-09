@@ -24,14 +24,14 @@ def _save_base64_image_to_file(base64_str: str, output_path: Path) -> None:
         pass  # Fail silently if logo can't be saved
 
 
-def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str = "", publisher_logo: str = "") -> bytes:
+def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str = "", brand_logo: str = "") -> bytes:
     """
     Generate poster PDF from parsed JSON data.
 
     Args:
         poster_data: Poster metadata from parser (title, authors, abstract, image, references)
-        journal_logo: Optional base64 journal logo
-        publisher_logo: Optional base64 publisher logo
+        journal_logo: Optional base64 journal logo (left side)
+        brand_logo: Optional base64 brand logo (right side)
 
     Returns:
         PDF as bytes
@@ -45,8 +45,8 @@ def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str
         # Save logos to temp directory if provided
         if journal_logo:
             _save_base64_image_to_file(journal_logo, tmpdir / "journal_logo.png")
-        if publisher_logo:
-            _save_base64_image_to_file(publisher_logo, tmpdir / "brand_logo.png")
+        if brand_logo:
+            _save_base64_image_to_file(brand_logo, tmpdir / "brand_logo.png")
 
         # Generate LaTeX
         generator = PosterLaTeXGenerator(poster_data)
@@ -76,8 +76,8 @@ def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str
             pdf_bytes = pdf_file.read_bytes()
 
             # Add logos if provided
-            if journal_logo or publisher_logo:
-                pdf_bytes = add_logos_to_pdf(pdf_bytes, journal_logo, publisher_logo)
+            if journal_logo or brand_logo:
+                pdf_bytes = add_logos_to_pdf(pdf_bytes, journal_logo, brand_logo)
 
             return pdf_bytes
 
