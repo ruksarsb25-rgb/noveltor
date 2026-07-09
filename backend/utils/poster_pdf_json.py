@@ -74,11 +74,6 @@ def generate_poster_pdf_from_json(poster_data: Dict[str, Any], journal_logo: str
                 raise Exception("PDF generation failed: output file not created")
 
             pdf_bytes = pdf_file.read_bytes()
-
-            # Add logos if provided
-            if journal_logo or brand_logo:
-                pdf_bytes = add_logos_to_pdf(pdf_bytes, journal_logo, brand_logo)
-
             return pdf_bytes
 
         except subprocess.TimeoutExpired:
