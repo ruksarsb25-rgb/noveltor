@@ -166,28 +166,31 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Header: logos on sides, title in center (all on one line)
-        latex += "\\begin{center}\n"
-        latex += "\\begin{tabular}{p{1.2in}p{2.5in}p{1.2in}}\n"
+        # Header: logos and title on one line
+        latex += "\\noindent\n"
 
-        # Left logo
+        # Build header line with logos on sides and title in center
+        left_logo = ""
         if tmpdir and (tmpdir / "journal_logo.png").exists():
-            latex += "\\includegraphics[height=0.7cm,keepaspectratio]{journal_logo.png} & "
-        else:
-            latex += "& "
+            left_logo = "\\includegraphics[height=0.8cm,keepaspectratio]{journal_logo.png}"
 
-        # Center: title
-        latex += f"\\centering\\textbf{{\\large {self.escape_latex(self.title)}}} & "
-
-        # Right logo
+        right_logo = ""
         if tmpdir and (tmpdir / "brand_logo.png").exists():
-            latex += "\\includegraphics[height=0.7cm,keepaspectratio]{brand_logo.png}\n"
-        else:
-            latex += "\n"
+            right_logo = "\\includegraphics[height=0.8cm,keepaspectratio]{brand_logo.png}"
 
-        latex += "\\end{tabular}\\\\\n"
-        latex += "\\end{center}\n"
-        latex += "\\vspace{0.15in}\n\n"
+        title = f"\\textbf{{\\Large {self.escape_latex(self.title)}}}"
+
+        # Use \makebox to keep everything on one line
+        if left_logo and right_logo:
+            latex += f"{left_logo} \\hfill {title} \\hfill {right_logo}\n"
+        elif left_logo:
+            latex += f"{left_logo} \\hfill {title}\n"
+        elif right_logo:
+            latex += f"{title} \\hfill {right_logo}\n"
+        else:
+            latex += f"\\centering {title}\n"
+
+        latex += "\n\\vspace{0.25in}\n\n"
 
         # Authors and affiliations - grouped format
         if self.authors:
