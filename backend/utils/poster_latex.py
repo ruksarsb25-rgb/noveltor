@@ -166,31 +166,23 @@ class PosterLaTeXGenerator:
 
 """
 
-        # Header: logos and title on one line
-        latex += "\\noindent\n"
-
-        # Build header line with logos on sides and title in center
-        left_logo = ""
+        # Header: use minipages for reliable side-by-side layout
+        latex += "\\begin{minipage}[c]{0.12\\textwidth}\n"
         if tmpdir and (tmpdir / "journal_logo.png").exists():
-            left_logo = "\\includegraphics[height=0.8cm,keepaspectratio]{journal_logo.png}"
-
-        right_logo = ""
+            latex += "\\includegraphics[width=0.9\\textwidth,keepaspectratio]{journal_logo.png}\n"
+        latex += "\\end{minipage}\n"
+        latex += "\\hfill\n"
+        latex += "\\begin{minipage}[c]{0.76\\textwidth}\n"
+        latex += "\\centering\n"
+        latex += f"\\textbf{{\\Large {self.escape_latex(self.title)}}}\n"
+        latex += "\\end{minipage}\n"
+        latex += "\\hfill\n"
+        latex += "\\begin{minipage}[c]{0.12\\textwidth}\n"
+        latex += "\\centering\n"
         if tmpdir and (tmpdir / "brand_logo.png").exists():
-            right_logo = "\\includegraphics[height=0.8cm,keepaspectratio]{brand_logo.png}"
-
-        title = f"\\textbf{{\\Large {self.escape_latex(self.title)}}}"
-
-        # Use \makebox to keep everything on one line
-        if left_logo and right_logo:
-            latex += f"{left_logo} \\hfill {title} \\hfill {right_logo}\n"
-        elif left_logo:
-            latex += f"{left_logo} \\hfill {title}\n"
-        elif right_logo:
-            latex += f"{title} \\hfill {right_logo}\n"
-        else:
-            latex += f"\\centering {title}\n"
-
-        latex += "\n\\vspace{0.25in}\n\n"
+            latex += "\\includegraphics[width=0.9\\textwidth,keepaspectratio]{brand_logo.png}\n"
+        latex += "\\end{minipage}\n"
+        latex += "\\vspace{0.2in}\n\n"
 
         # Authors and affiliations - grouped format
         if self.authors:
