@@ -34,17 +34,42 @@ _REF_BULLET_RE = re.compile(r'^[•\-\*●◆▪]\s+')
 # DOI in any format: "doi: 10.xxx" or "https://doi.org/10.xxx"
 _DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)([^\s,;<>\)]+)', re.IGNORECASE)
 
-_W_TBL    = _qn('w:tbl')
-_W_P      = _qn('w:p')
-_W_T      = _qn('w:t')
-_W_VALIGN = _qn('w:vertAlign')
-_W_VAL    = _qn('w:val')
-_W_RPR    = _qn('w:rPr')
+_W_TBL     = _qn('w:tbl')
+_W_P       = _qn('w:p')
+_W_T       = _qn('w:t')
+_W_VALIGN  = _qn('w:vertAlign')
+_W_VAL     = _qn('w:val')
+_W_RPR     = _qn('w:rPr')
+_W_HYPERLINK = _qn('w:hyperlink')
+_R_ID      = _qn('r:id')
+
+
+def _extract_hyperlink_url(p, rel_id: str) -> str:
+    """Extract URL from a hyperlink relationship ID."""
+    try:
+        if hasattr(p, '_parent') and hasattr(p._parent, 'part'):
+            rel = p._parent.part.rels.get(rel_id)
+            if rel:
+                return rel.target_ref
+    except Exception:
+        pass
+    return ""
 
 
 def _para_text_with_fmt(p) -> str:
-    """Extract paragraph text, wrapping subscript/superscript runs in <sub>/<sup> tags."""
+    """Extract paragraph text, including hyperlinks for DOI preservation."""
     parts = []
+
+    # Also check for hyperlink elements that might contain URLs
+    hyperlink_urls = []
+    for hyperlink in p._element.findall(_W_HYPERLINK):
+        rel_id = hyperlink.get(_R_ID)
+        if rel_id:
+            url = _extract_hyperlink_url(p, rel_id)
+            if url:
+                hyperlink_urls.append(url)
+
+    # Extract text from runs with formatting
     for run in p.runs:
         t = run.text
         if not t:
@@ -62,15 +87,32 @@ def _para_text_with_fmt(p) -> str:
             parts.append(f'<sup>{escaped}</sup>')
         else:
             parts.append(escaped)
-    return ''.join(parts)
+
+    text = ''.join(parts)
+
+    # Append hyperlink URLs if found (for DOI extraction in references)
+    if hyperlink_urls:
+        text += " " + " ".join(hyperlink_urls)
+
+    return text
 
 
 def _cell_text_with_fmt(cell) -> str:
-    """Extract all text from a table cell across all paragraphs, preserving sub/sup."""
+    """Extract all text from a table cell across all paragraphs, preserving sub/sup and hyperlinks."""
     parts = []
     for para in cell.paragraphs:
         if parts:
             parts.append(' ')
+
+        # Extract hyperlinks from this paragraph
+        for hyperlink in para._element.findall(_W_HYPERLINK):
+            rel_id = hyperlink.get(_R_ID)
+            if rel_id:
+                url = _extract_hyperlink_url(para, rel_id)
+                if url:
+                    parts.append(url)
+
+        # Extract text from runs
         for run in para.runs:
             t = run.text
             if not t:
@@ -88,6 +130,7 @@ def _cell_text_with_fmt(cell) -> str:
                 parts.append(f'<sup>{escaped}</sup>')
             else:
                 parts.append(escaped)
+
     return ''.join(parts).strip()
 
 # Drawing XML namespaces for inline/anchor image detection
@@ -803,11 +846,16 @@ def _parse_references(raw_refs: list) -> list:
         text = _REF_BULLET_RE.sub("", raw)
         text = re.sub(r"^\[?\d+[\]\.]\s+", "", text).strip()
 
-        # Extract DOI
+        # Extract DOI: search through the raw text (including any appended hyperlink URLs)
         doi = ""
         m = _DOI_RE.search(raw)
         if m:
-            doi = m.group(1).rstrip(".,;)>").strip()
+            # DOI captured after 'doi:' or 'https://doi.org/'
+            doi_str = m.group(1).rstrip(".,;)>").strip()
+            # Remove trailing punctuation and whitespace that's common in text
+            doi_str = re.sub(r'[\s\.\-_]+$', '', doi_str).strip()
+            if doi_str:
+                doi = doi_str
 
         if text:
             result.append({"number": i, "raw_text": text, "doi": doi})
