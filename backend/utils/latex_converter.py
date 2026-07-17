@@ -141,7 +141,7 @@ class LaTeXGenerator:
         # Estimate columns
         num_cols = len(headers) if headers else (len(rows[0]) if rows else 1)
 
-        latex = "\\begin{table}[h]\n\\centering\n"
+        latex = "\\begin{table}[!htbp]\n\\centering\n"
         if caption:
             latex += f"\\caption{{{self.escape_latex(caption)}}}\n"
 
@@ -188,6 +188,8 @@ class LaTeXGenerator:
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{booktabs}
+
+\raggedbottom
 
 """
 

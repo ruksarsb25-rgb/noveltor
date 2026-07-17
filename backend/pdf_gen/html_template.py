@@ -202,7 +202,7 @@ body {{
 .data-table .even td {{ background: #F5F7FA; }}
 
 /* ── Figures (full width) ── */
-.figure-wrap {{ margin: 3pt 0; width: 100%; }}
+.figure-wrap {{ margin: 3pt 0; width: 100%; page-break-inside: avoid; break-inside: avoid; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 
 /* ── Equations (selectable text) ── */
