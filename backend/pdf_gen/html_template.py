@@ -451,12 +451,15 @@ def build_html(article: dict, two_col: bool = False) -> str:
         if affil_lines else ""
     )
 
-    # ── Corresponding email ──────────────────────────────────────────
-    corresp_html = ""
-    for a in authors:
-        if a.get("corresponding") and a.get("email"):
-            corresp_html = f'<div class="corresp-line">*Corresponding author: {_e(a["email"])}</div>'
-            break
+    # ── Corresponding email(s) ──────────────────────────────────────────
+    corresp_emails = [a.get("email") for a in authors if a.get("corresponding") and a.get("email")]
+    if corresp_emails:
+        # Singular or plural based on count
+        author_label = "Corresponding authors" if len(corresp_emails) > 1 else "Corresponding author"
+        emails_str = ", ".join(_e(email) for email in corresp_emails)
+        corresp_html = f'<div class="corresp-line">*{author_label}: {emails_str}</div>'
+    else:
+        corresp_html = ""
 
     # ── Dates ────────────────────────────────────────────────────────
     date_parts = []
