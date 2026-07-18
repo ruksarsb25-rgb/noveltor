@@ -193,6 +193,14 @@ def build_web_html(article: dict) -> str:
         for i, aff in enumerate(affil_list)
     )
 
+    # Corresponding author emails
+    corresp_emails = [a.get("email") for a in authors if a.get("corresponding") and a.get("email")]
+    corresp_html = ""
+    if corresp_emails:
+        author_label = "Corresponding authors" if len(corresp_emails) > 1 else "Corresponding author"
+        emails_str = ", ".join(_e(email) for email in corresp_emails)
+        corresp_html = f'<div class="corresp-line">*{author_label}: {emails_str}</div>'
+
     # ── Dates row ────────────────────────────────────────────────────────────
     dates_parts = []
     if received:  dates_parts.append(f'<span><strong>Received Date</strong>: {received}</span>')
@@ -375,6 +383,7 @@ h1.article-title {{ font-size: 22px; font-weight: 700; color: #111; line-height:
 .authors-line {{ font-size: 14px; margin-bottom: 8px; line-height: 1.6; }}
 .orcid-link {{ color: #a6ce39; font-size: 11px; }}
 .affil {{ font-size: 12px; color: #555; margin-bottom: 2px; }}
+.corresp-line {{ font-size: 13px; color: {NAVY}; margin-top: 8px; font-weight: 500; }}
 .keywords {{ font-size: 13px; margin: 14px 0; }}
 
 /* ── Abstract ── */
@@ -512,6 +521,7 @@ table.data-table tr.even td {{ background: #f7f9fc; }}
     <div id="authors">
       <div class="authors-line">{authors_line}</div>
       <div class="affils">{affils_html}</div>
+      {corresp_html}
     </div>
     {dates_html}
 
