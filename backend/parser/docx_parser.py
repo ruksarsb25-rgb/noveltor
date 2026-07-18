@@ -159,9 +159,9 @@ _FIG_REF_VERB_RE   = re.compile(
 )
 
 
-# Strip leading "Fig. N:" / "Figure (12)." / "Table 1 -" prefix from caption text
+# Strip leading "Fig. N:" / "Figure (12)." / "Table 1 -" / "Fig. 1 " prefix from caption text
 _FIG_LABEL_PREFIX_RE = re.compile(
-    r'^(?:fig(?:ure)?|table)\.?[\s\-]?\s*\(?\d+\)?[a-z]?\s*[:\.\-]\s*',
+    r'^(?:fig(?:ure)?|table)\.?[\s\-]?\s*\(?\d+\)?[a-z]?\s*[:\.\-\s]+',
     re.IGNORECASE
 )
 
