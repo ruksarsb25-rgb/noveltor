@@ -132,12 +132,19 @@ def _build_article_meta(front: Element, data: dict):
     if corresp_authors:
         an = SubElement(am, "author-notes")
         for i, a in enumerate(corresp_authors):
+            corresp = SubElement(an, "corresp", {"id": f"cor-{i}"})
             full = f"{a.get('first_name','')} {a.get('last_name','')}".strip()
             aff  = a.get("affiliation", "")
             email = a.get("email", "")
-            parts = ", ".join(filter(None, [full, aff, email]))
-            _text(SubElement(an, "corresp", {"id": f"cor-{i}"}),
-                  f"Corresponding author: {parts}")
+
+            # Build corresp text: "Name, Affiliation"
+            name_aff = ", ".join(filter(None, [full, aff]))
+            if name_aff:
+                corresp.text = f"{name_aff} "
+
+            # Add email as proper JATS element (OJS expects this)
+            if email:
+                _text(SubElement(corresp, "email"), email)
 
     # Pub dates – matches Data.xml: one "pub" + one "collection"
     pub_year  = str(data.get("pub_date_year") or "")
