@@ -163,7 +163,7 @@ def extract_equation_text(omml_str: str) -> str:
 def mathml_from_omml(omml_str: str) -> str:
     """
     Convert OMML (Office Math Markup Language) to MathML.
-    Returns basic MathML or empty string if conversion fails.
+    Creates proper MathML structures for fractions, subscripts, superscripts, etc.
     """
     if not omml_str:
         return ""
@@ -172,20 +172,99 @@ def mathml_from_omml(omml_str: str) -> str:
         # Parse OMML
         omml = etree.fromstring(omml_str.encode('utf-8'))
 
-        # Extract text elements to build equation representation
-        text_elements = omml.xpath('.//*[local-name()="t"]')
-        equation_text = "".join([t.text or "" for t in text_elements]).strip()
+        def tag_name(elem):
+            """Get local tag name without namespace."""
+            return elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
 
-        if equation_text:
-            # Create proper MathML with actual equation content
-            # Escape special XML characters
-            safe_text = equation_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            mathml = f'''<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">
-  <mrow>
-    <mtext>{safe_text}</mtext>
-  </mrow>
-</math>'''
-            return mathml
+        def omml_to_mml(elem):
+            """Recursively convert OMML element to MathML element."""
+            tname = tag_name(elem)
+
+            # Text element → mi (identifier) or mn (number)
+            if tname == 't':
+                text = elem.text or ""
+                mml = etree.Element("mi")
+                mml.text = text
+                return mml
+
+            # Paragraph (m:oMath)
+            elif tname == 'oMath':
+                mml = etree.Element("mrow")
+                for child in elem:
+                    mml.append(omml_to_mml(child))
+                return mml
+
+            # Run (m:r) → process children
+            elif tname == 'r':
+                mml = etree.Element("mrow")
+                for child in elem:
+                    mml.append(omml_to_mml(child))
+                return mml
+
+            # Fraction (m:f: numerator/denominator)
+            elif tname == 'f':
+                mml = etree.Element("mfrac")
+                for child in elem:
+                    child_tag = tag_name(child)
+                    if child_tag == 'num':
+                        num = etree.Element("mrow")
+                        for c in child:
+                            num.append(omml_to_mml(c))
+                        mml.append(num)
+                    elif child_tag == 'den':
+                        den = etree.Element("mrow")
+                        for c in child:
+                            den.append(omml_to_mml(c))
+                        mml.append(den)
+                return mml
+
+            # Subscript (m:sSub or m:sub)
+            elif tname in ['sSub', 'sub']:
+                mml = etree.Element("msub")
+                for child in elem:
+                    child_tag = tag_name(child)
+                    if child_tag == 'e' or child_tag == 'base':
+                        mml.append(omml_to_mml(child))
+                    elif child_tag == 'sub':
+                        mml.append(omml_to_mml(child))
+                return mml
+
+            # Superscript (m:sSup or m:sup)
+            elif tname in ['sSup', 'sup']:
+                mml = etree.Element("msup")
+                for child in elem:
+                    child_tag = tag_name(child)
+                    if child_tag == 'e' or child_tag == 'base':
+                        mml.append(omml_to_mml(child))
+                    elif child_tag == 'sup':
+                        mml.append(omml_to_mml(child))
+                return mml
+
+            # Element (m:e) → process children
+            elif tname == 'e':
+                mml = etree.Element("mrow")
+                for child in elem:
+                    mml.append(omml_to_mml(child))
+                return mml
+
+            # Default: wrap children in mrow
+            else:
+                mml = etree.Element("mrow")
+                for child in elem:
+                    mml.append(omml_to_mml(child))
+                return mml
+
+        # Convert OMML to MathML
+        mml_root = omml_to_mml(omml)
+
+        # Wrap in math element with proper namespace
+        math = etree.Element("math", xmlns="http://www.w3.org/1998/Math/MathML")
+        math.set("display", "block")
+        math.append(mml_root)
+
+        # Serialize to string
+        return etree.tostring(math, encoding="unicode", pretty_print=False)
+
     except Exception as e:
         print(f"Warning: OMML to MathML conversion failed: {e}")
 
