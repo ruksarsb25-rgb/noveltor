@@ -205,13 +205,16 @@ body {{
 .figure-wrap {{ margin: 3pt 0; width: 100%; page-break-inside: avoid; break-inside: avoid; }}
 .figure-img  {{ max-width: 100%; max-height: 140mm; display: block; margin: 0 auto; }}
 
-/* ── Equations (selectable text) ── */
+/* ── Equations (MathML, LaTeX, or text) ── */
 .equation {{
     text-align: center; margin: 6pt 0; padding: 8pt 6pt;
     background: #f9f9f9; border-left: 3pt solid {NAVY};
-    border-radius: 2pt; font-size: 9.5pt; font-family: monospace;
+    border-radius: 2pt; font-size: 9.5pt;
     line-height: 1.4;
 }}
+.mathml-equation {{ font-family: serif; font-size: 11pt; }}
+.mathml-equation math {{ display: inline-block; max-width: 100%; }}
+.latex-equation {{ font-family: "Courier New", monospace; white-space: pre-wrap; word-break: break-word; }}
 /* Poster: images fill the full page width, no height cap */
 body.poster .figure-img {{ width: 100%; max-height: none; }}
 .figure-box  {{
@@ -340,18 +343,27 @@ def _render_content_blocks(sec: dict) -> str:
             elif btype == "figure":
                 html += _render_figure_block(block)
             elif btype == "equation":
-                # Render equation as selectable text (priority) with image fallback
+                # Render equation: prefer LaTeX/MathML with fallback to text
+                latex = block.get("latex", "").strip() if block.get("latex") else ""
+                mathml = block.get("mathml", "").strip() if block.get("mathml") else ""
                 text = block.get("text", "").strip() if block.get("text") else ""
                 label = block.get("label", "")
                 uri = block.get("data_uri", "")
 
-                # Always try to use text representation (selectable/copyable)
-                if text:
+                # Priority 1: MathML (proper formula rendering in PDF)
+                if mathml:
+                    html += f'<div class="equation mathml-equation">{mathml}</div>'
+                # Priority 2: LaTeX text (selectable/copyable in PDF)
+                elif latex:
+                    safe_latex = _e(latex)
+                    html += f'<div class="equation latex-equation">$$\n{safe_latex}\n$$</div>'
+                # Priority 3: Plain text representation
+                elif text:
                     safe_text = _e(text)
                     label_str = f"<strong>{_e(label)}:</strong> " if label else "<strong>Equation:</strong> "
                     html += f'<div class="equation">{label_str}{safe_text}</div>'
+                # Priority 4: Image fallback
                 elif uri:
-                    # Image fallback only if no text available
                     html += f'<div style="text-align:center;margin:6pt 0;"><img src="{uri}" style="max-height:100pt;max-width:100%;" alt="equation"/></div>'
                 else:
                     # Last resort: empty equation placeholder

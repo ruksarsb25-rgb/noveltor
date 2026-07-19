@@ -64,8 +64,18 @@ def _render_content_blocks(content: list) -> str:
             if text:
                 html += f'<p class="body-text">{_citify(_linkify(text))}</p>'
         elif btype == "equation":
+            mathml = block.get("mathml", "")
             uri = block.get("data_uri", "")
-            if uri:
+            latex = block.get("latex", "")
+
+            if mathml:
+                # Render MathML directly (browsers support native rendering)
+                html += f'<div class="equation mathml-equation">{mathml}</div>'
+            elif latex:
+                # Fall back to LaTeX in code block for copy-ability
+                html += f'<div class="equation latex-equation"><code>${latex}$</code></div>'
+            elif uri:
+                # Last resort: image
                 html += f'<div class="equation"><img src="{uri}" alt="equation" style="max-height:60px;"/></div>'
         elif btype == "table":
             html += _render_table(block)
@@ -401,7 +411,11 @@ h2.sec-heading {{
 }}
 h3.subsec-heading {{ font-size: 14px; font-weight: 700; color: #333; margin: 18px 0 8px; }}
 p.body-text {{ font-size: 13px; line-height: 1.8; color: #333; margin-bottom: 12px; }}
-.equation {{ text-align: center; margin: 16px 0; }}
+.equation {{ text-align: center; margin: 16px 0; font-size: 16px; }}
+.mathml-equation {{ padding: 12px; background: #f9fafb; border-radius: 4px; }}
+.mathml-equation math {{ max-width: 100%; overflow-x: auto; display: inline-block; }}
+.latex-equation {{ font-family: "Courier New", monospace; padding: 8px 12px; background: #f0f0f0; border-radius: 4px; }}
+.latex-equation code {{ color: #333; word-break: break-word; }}
 
 /* ── Figures ── */
 .figure-block {{ margin: 20px 0; text-align: center; }}

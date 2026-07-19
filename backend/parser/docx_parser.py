@@ -589,11 +589,26 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             else:
                 if current_section is None:
                     current_section = _new_section("", "Other")
-                block = {"type": "paragraph", "text": _para_text_with_fmt(p)}
-                if current_section["subsections"]:
-                    current_section["subsections"][-1]["content"].append(block)
-                else:
-                    current_section["content"].append(block)
+
+                # Extract paragraph text and check for LaTeX formulas
+                para_text = _para_text_with_fmt(p)
+                latex_blocks = _extract_latex_blocks(para_text)
+
+                # Add all extracted blocks (text + equations) to content
+                target = (current_section["subsections"][-1]["content"]
+                         if current_section["subsections"] else current_section["content"])
+
+                for latex_block in latex_blocks:
+                    if latex_block["type"] == "text":
+                        target.append({"type": "paragraph", "text": latex_block["text"]})
+                    else:  # equation
+                        target.append({
+                            "type": "equation",
+                            "text": latex_block["latex"],
+                            "latex": latex_block["latex"],
+                            "mathml": latex_block["mathml"],
+                            "data_uri": ""
+                        })
 
     if current_section:
         state["sections"].append(current_section)
