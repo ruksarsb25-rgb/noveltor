@@ -8,6 +8,7 @@ import requests
 from docx import Document
 from docx.oxml.ns import qn as _qn
 from utils.equations import extract_equation_text, mathml_from_omml
+from utils.latex_to_mathml import detect_latex_formulas, latex_to_mathml
 
 # Translate Unicode superscript digits → ASCII digits
 _SUP_TO_NUM = str.maketrans('¹²³⁴⁵⁶⁷⁸⁹⁰', '1234567890')
@@ -169,6 +170,47 @@ _FIG_LABEL_PREFIX_RE = re.compile(
 def _strip_fig_label(text: str) -> str:
     """Remove 'Fig. N:' / 'Figure (12).' prefix; keep only the description."""
     return _FIG_LABEL_PREFIX_RE.sub("", text).strip()
+
+
+def _extract_latex_blocks(text: str) -> list:
+    """
+    Split text by LaTeX formulas and return list of content blocks.
+
+    Returns: [{"type": "text", "text": "..."}, {"type": "equation", "latex": "...", "mathml": "..."}]
+    """
+    formulas = detect_latex_formulas(text)
+    if not formulas:
+        return [{"type": "text", "text": text}]
+
+    blocks = []
+    last_end = 0
+
+    for start, end, formula_text, is_display in formulas:
+        # Text before formula
+        if start > last_end:
+            before_text = text[last_end:start].strip()
+            if before_text:
+                blocks.append({"type": "text", "text": before_text})
+
+        # Formula block
+        mathml = latex_to_mathml(formula_text, display=is_display)
+        blocks.append({
+            "type": "equation",
+            "text": formula_text,  # Original LaTeX for reference
+            "latex": formula_text,
+            "mathml": mathml,
+            "data_uri": ""  # No image for LaTeX-based equations
+        })
+
+        last_end = end
+
+    # Remaining text
+    if last_end < len(text):
+        remaining = text[last_end:].strip()
+        if remaining:
+            blocks.append({"type": "text", "text": remaining})
+
+    return blocks
 
 
 def _collect_fig_captions(doc) -> dict:
