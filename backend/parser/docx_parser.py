@@ -7,6 +7,7 @@ import html as _html_lib
 import requests
 from docx import Document
 from docx.oxml.ns import qn as _qn
+from docx.text.hyperlink import Hyperlink
 from utils.equations import extract_equation_text, mathml_from_omml
 from utils.latex_to_mathml import detect_latex_formulas, latex_to_mathml
 
@@ -35,6 +36,8 @@ _REF_ENTRY_RE = re.compile(r'^\[?\d+[\]\.]\s+\S')
 _REF_BULLET_RE = re.compile(r'^[•\-\*●◆▪]\s+')
 # DOI in any format: "doi: 10.xxx", "https://doi.org/10.xxx", or bare "10.xxxx/yyyy"
 _DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)?([0-9]{2}\.[0-9]{4}/[^\s,;<>\)]+)', re.IGNORECASE)
+# Matches a DOI inside a hyperlink target, e.g. https://doi.org/10.1007/978-981-96-6795-6_18
+_DOI_URL_RE = re.compile(r'doi\.org/(10\.\d{4,}/\S+)', re.IGNORECASE)
 
 _W_TBL     = _qn('w:tbl')
 _W_P       = _qn('w:p')
@@ -42,96 +45,69 @@ _W_T       = _qn('w:t')
 _W_VALIGN  = _qn('w:vertAlign')
 _W_VAL     = _qn('w:val')
 _W_RPR     = _qn('w:rPr')
-_W_HYPERLINK = _qn('w:hyperlink')
-_R_ID      = _qn('r:id')
 
 
-def _extract_hyperlink_url(p, rel_id: str) -> str:
-    """Extract URL from a hyperlink relationship ID."""
-    try:
-        if hasattr(p, '_parent') and hasattr(p._parent, 'part'):
-            rel = p._parent.part.rels.get(rel_id)
-            if rel:
-                return rel.target_ref
-    except Exception:
-        pass
-    return ""
+def _run_text_with_fmt(run) -> str:
+    """Escape a run's text and wrap it in <sub>/<sup> per its vertAlign formatting."""
+    t = run.text
+    if not t:
+        return ""
+    rpr = run._element.find(_W_RPR)
+    vert = None
+    if rpr is not None:
+        va = rpr.find(_W_VALIGN)
+        if va is not None:
+            vert = va.get(_W_VAL)
+    escaped = _html_lib.escape(t, quote=False)
+    if vert == 'subscript':
+        return f'<sub>{escaped}</sub>'
+    elif vert == 'superscript':
+        return f'<sup>{escaped}</sup>'
+    return escaped
 
 
 def _para_text_with_fmt(p) -> str:
-    """Extract paragraph text, including hyperlinks for DOI preservation."""
+    """Extract paragraph text in document order, including hyperlink display text
+    (e.g. linked author names) so it isn't dropped. A hyperlink's target is appended
+    only when it's a DOI link whose DOI isn't already visible in the display text —
+    this preserves CrossRef DOIs that documents show as plain link text like "here"."""
     parts = []
+    doi_appendix = []
 
-    # Also check for hyperlink elements that might contain URLs
-    hyperlink_urls = []
-    for hyperlink in p._element.findall(_W_HYPERLINK):
-        rel_id = hyperlink.get(_R_ID)
-        if rel_id:
-            url = _extract_hyperlink_url(p, rel_id)
-            if url:
-                hyperlink_urls.append(url)
-
-    # Extract text from runs with formatting
-    for run in p.runs:
-        t = run.text
-        if not t:
-            continue
-        rpr = run._element.find(_W_RPR)
-        vert = None
-        if rpr is not None:
-            va = rpr.find(_W_VALIGN)
-            if va is not None:
-                vert = va.get(_W_VAL)
-        escaped = _html_lib.escape(t, quote=False)
-        if vert == 'subscript':
-            parts.append(f'<sub>{escaped}</sub>')
-        elif vert == 'superscript':
-            parts.append(f'<sup>{escaped}</sup>')
+    for item in p.iter_inner_content():
+        if isinstance(item, Hyperlink):
+            link_text = ''.join(_run_text_with_fmt(r) for r in item.runs)
+            parts.append(link_text)
+            url = item.address or ""
+            m = _DOI_URL_RE.search(url)
+            if m and m.group(1) not in link_text:
+                doi_appendix.append(url)
         else:
-            parts.append(escaped)
+            parts.append(_run_text_with_fmt(item))
 
     text = ''.join(parts)
-
-    # Append hyperlink URLs if found (for DOI extraction in references)
-    if hyperlink_urls:
-        text += " " + " ".join(hyperlink_urls)
-
+    if doi_appendix:
+        text += " " + " ".join(doi_appendix)
     return text
 
 
 def _cell_text_with_fmt(cell) -> str:
-    """Extract all text from a table cell across all paragraphs, preserving sub/sup and hyperlinks."""
+    """Extract all text from a table cell across all paragraphs, preserving sub/sup and hyperlink text."""
     parts = []
     for para in cell.paragraphs:
         if parts:
             parts.append(' ')
 
-        # Extract hyperlinks from this paragraph
-        for hyperlink in para._element.findall(_W_HYPERLINK):
-            rel_id = hyperlink.get(_R_ID)
-            if rel_id:
-                url = _extract_hyperlink_url(para, rel_id)
-                if url:
-                    parts.append(url)
-
-        # Extract text from runs
-        for run in para.runs:
-            t = run.text
-            if not t:
-                continue
-            rpr = run._element.find(_W_RPR)
-            vert = None
-            if rpr is not None:
-                va = rpr.find(_W_VALIGN)
-                if va is not None:
-                    vert = va.get(_W_VAL)
-            escaped = _html_lib.escape(t, quote=False)
-            if vert == 'subscript':
-                parts.append(f'<sub>{escaped}</sub>')
-            elif vert == 'superscript':
-                parts.append(f'<sup>{escaped}</sup>')
+        for item in para.iter_inner_content():
+            if isinstance(item, Hyperlink):
+                link_text = ''.join(_run_text_with_fmt(r) for r in item.runs)
+                parts.append(link_text)
+                url = item.address or ""
+                m = _DOI_URL_RE.search(url)
+                if m and m.group(1) not in link_text:
+                    parts.append(' ' + url)
             else:
-                parts.append(escaped)
+                parts.append(_run_text_with_fmt(item))
 
     return ''.join(parts).strip()
 
