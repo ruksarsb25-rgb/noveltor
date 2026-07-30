@@ -4,10 +4,11 @@ Extracts structured metadata and content from academic manuscripts.
 """
 import re
 import html as _html_lib
-import requests
 from docx import Document
 from docx.oxml.ns import qn as _qn
 from docx.text.hyperlink import Hyperlink
+from docx.text.run import Run
+from lxml import etree as _etree
 from utils.equations import extract_equation_text, mathml_from_omml
 from utils.latex_to_mathml import detect_latex_formulas, latex_to_mathml
 
@@ -41,10 +42,12 @@ _DOI_URL_RE = re.compile(r'doi\.org/(10\.\d{4,}/\S+)', re.IGNORECASE)
 
 _W_TBL     = _qn('w:tbl')
 _W_P       = _qn('w:p')
+_W_R       = _qn('w:r')
 _W_T       = _qn('w:t')
 _W_VALIGN  = _qn('w:vertAlign')
 _W_VAL     = _qn('w:val')
 _W_RPR     = _qn('w:rPr')
+_W_HYPERLINK = _qn('w:hyperlink')
 
 
 def _run_text_with_fmt(run) -> str:
@@ -355,36 +358,35 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
         # ── OMML equation detection (before blank-text skip) ─────────────────
         # Detect equations in ANY phase, but handle specially for pre-body
         if _has_math(p._element):
-            # Extract OMML for copyable equations in Word
-            omml = _extract_omml(p._element)
-            # Also create image for display
-            data_uri = _math_para_to_image(p)
-
-            # Extract equation text and convert to MathML
-            eq_text = extract_equation_text(omml) if omml else ""
-            mathml = mathml_from_omml(omml) if omml else ""
+            combined_text, omml_list, has_prose = _split_para_math(p)
 
             if current_section is None:
                 current_section = _new_section("", "Other")
             target = (current_section["subsections"][-1]["content"]
                       if current_section["subsections"] else current_section["content"])
 
-            if omml or data_uri:
-                # Store OMML, text, and image for all export formats
-                # Prioritize extracted text, fallback to image
-                target.append({
-                    "type": "equation",
-                    "omml": omml if omml else None,
-                    "mathml": mathml if mathml else None,
-                    "text": eq_text if eq_text else None,  # Extracted text with proper subscripts
-                    "data_uri": data_uri if data_uri else None
-                })
+            if has_prose or not omml_list:
+                # Prose paragraph with inline math mid-sentence (e.g. "Where:
+                # C0- Initial concentration ... and Ct- Concentration...") —
+                # render as ordinary paragraph text so nothing outside the
+                # equation is lost, with <sub>/<sup> preserved for variables.
+                if combined_text:
+                    target.append({"type": "paragraph", "text": combined_text})
             else:
-                # Fallback: plain text from math runs
-                runs = p._element.findall(f".//{_MATH_NS}t")
-                eq_text = " ".join(r.text for r in runs if r.text).strip()
-                if eq_text:
-                    target.append({"type": "paragraph", "text": eq_text})
+                # Standalone display equation (e.g. "D = Kλ/(β cos θ) -----(1)")
+                data_uri = _math_para_to_image(p)
+                omml   = omml_list[0]
+                mathml = mathml_from_omml(omml) if omml else ""
+                eq_text = " ".join(extract_equation_text(o) for o in omml_list).strip()
+
+                if omml or data_uri:
+                    target.append({
+                        "type": "equation",
+                        "omml": omml if omml else None,
+                        "mathml": mathml if mathml else None,
+                        "text": eq_text if eq_text else None,  # Extracted text with proper subscripts
+                        "data_uri": data_uri if data_uri else None
+                    })
             continue
 
         # ── Inline image detection (before blank-text skip) ──────────────────
@@ -630,18 +632,58 @@ def _has_math(p_element) -> bool:
     return bool(p_element.findall(f".//{_MATH_NS}oMath"))
 
 
-def _extract_omml(p_element) -> str:
-    """Extract the OMML (Office Math Markup Language) from an equation paragraph."""
-    from lxml import etree
-    omath_elements = p_element.findall(f".//{_MATH_NS}oMath")
-    if omath_elements:
-        try:
-            # Serialize the first oMath element to a string
-            omml_str = etree.tostring(omath_elements[0], encoding='unicode', method='xml')
-            return omml_str.strip()
-        except Exception:
-            pass
-    return ""
+def _split_para_math(p):
+    """
+    Walk a paragraph's direct children in document order, separating plain
+    prose text from embedded OMML equations (m:oMath, optionally wrapped in
+    m:oMathPara for standalone display equations).
+
+    A paragraph containing math is not always a pure display equation — inline
+    equations are commonly used mid-sentence for a single variable (e.g. "...
+    where C0- Initial concentration ... and Ct- Concentration..."). Grabbing
+    only the first m:oMath and discarding everything else (the old behaviour)
+    silently drops the surrounding sentence. This walks every direct child so
+    nothing is lost, regardless of how many equations or how much prose the
+    paragraph mixes.
+
+    Returns (combined_text, omml_list, has_prose):
+      combined_text — full paragraph text with each equation's content spliced
+                       in place, using <sub>/<sup> tags for scripts (the same
+                       convention _run_text_with_fmt uses for ordinary text)
+      omml_list     — OMML XML string for every m:oMath found, in order
+      has_prose     — True if any non-whitespace text exists outside the
+                       equations, i.e. this is prose with inline math rather
+                       than a standalone display equation
+    """
+    parts = []
+    omml_list = []
+    has_prose = False
+
+    def _handle_omath(om_el):
+        omml_str = _etree.tostring(om_el, encoding='unicode').strip()
+        omml_list.append(omml_str)
+        parts.append(extract_equation_text(omml_str, html_sub_sup=True))
+
+    for child in p._element:
+        tag = child.tag
+        if tag == _W_R:
+            run_text = _run_text_with_fmt(Run(child, p))
+            if run_text.strip():
+                has_prose = True
+            parts.append(run_text)
+        elif tag == _W_HYPERLINK:
+            hlink_text = "".join(_run_text_with_fmt(Run(r, p)) for r in child.findall(_W_R))
+            if hlink_text.strip():
+                has_prose = True
+            parts.append(hlink_text)
+        elif tag == f"{_MATH_NS}oMath":
+            _handle_omath(child)
+        elif tag == f"{_MATH_NS}oMathPara":
+            for om in child.findall(f"{_MATH_NS}oMath"):
+                _handle_omath(om)
+        # else: paragraph properties, proofErr markers, bookmarks, etc. — no text
+
+    return "".join(parts).strip(), omml_list, has_prose
 
 
 def _math_para_to_image(p) -> str:
@@ -863,61 +905,6 @@ def _guess_section_type(heading: str) -> str:
     return "Other"
 
 
-def _lookup_doi_via_crossref(ref_text: str) -> str:
-    """
-    Query CrossRef API to find DOI for a reference without one.
-
-    Extracts authors, title, and year from reference text and queries CrossRef.
-    Returns DOI string if found, empty string otherwise.
-    """
-    try:
-        # Extract title (usually between journal name and other metadata)
-        # Pattern: look for capitalized phrases that are likely titles
-        title_match = re.search(r'([A-Z][^,]*?)[,.]?\s+(?:Journal|Rev|Sci|Proc|Int|Adv|Appl|Chem|Mater|Tech)', ref_text, re.IGNORECASE)
-        if not title_match:
-            return ""
-
-        title = title_match.group(1).strip()
-
-        # Extract year (4-digit number near end of reference)
-        year_match = re.search(r'\b(20\d{2}|19\d{2})\b', ref_text)
-        year = year_match.group(1) if year_match else ""
-
-        # Extract first author (name before first comma)
-        author_match = re.match(r'^([A-Za-z\-]+)\s+([A-Za-z\-]+)', ref_text)
-        author = author_match.group(1) if author_match else ""
-
-        if not title:
-            return ""
-
-        # Query CrossRef API
-        params = {
-            'query.title': title,
-            'rows': 1,
-        }
-        if author:
-            params['query.author'] = author
-        if year:
-            params['query.published'] = year
-
-        response = requests.get(
-            'https://api.crossref.org/works',
-            params=params,
-            timeout=5
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            items = data.get('message', {}).get('items', [])
-            if items and len(items) > 0:
-                doi = items[0].get('DOI', '').strip()
-                return doi
-    except Exception:
-        pass  # Fail silently if API unavailable
-
-    return ""
-
-
 def _parse_references(raw_refs: list) -> list:
     """
     Convert raw collected reference strings into structured dicts.
@@ -927,7 +914,10 @@ def _parse_references(raw_refs: list) -> list:
       • Numbered [1]:      "[1] Smith J et al. J Chem. 2020..."
       • Plain paragraph:   "Patel R. Green chemistry. Org Lett. 2021..."
 
-    Attempts to extract DOI from text or via CrossRef API lookup if missing.
+    Extracts a DOI from text when present. References without one keep doi=""
+    — use POST /enrich-refs (Crossref lookup) to fill those in afterward;
+    that lookup is intentionally not done here since it's a slow, per-reference
+    external API call that would block the whole /parse request.
     Returns: [{number, raw_text, doi}]
     """
     result = []
@@ -945,10 +935,6 @@ def _parse_references(raw_refs: list) -> list:
             doi_str = re.sub(r'[\s\.\-_]+$', '', doi_str).strip()
             if doi_str:
                 doi = doi_str
-
-        # If no DOI found in text, try CrossRef API lookup
-        if not doi and text:
-            doi = _lookup_doi_via_crossref(text)
 
         if text:
             result.append({"number": i, "raw_text": text, "doi": doi})

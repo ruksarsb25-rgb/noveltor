@@ -5,11 +5,17 @@ Supports multiple export formats: Word, XML/JATS, HTML, PDF.
 import re
 from lxml import etree
 
-def extract_equation_text(omml_str: str) -> str:
+def extract_equation_text(omml_str: str, html_sub_sup: bool = False) -> str:
     """
     Extract text representation from OMML, preserving subscripts/superscripts.
     Recursively processes all elements including nested fractions, subscripts, etc.
-    Converts subscripts to Unicode characters (₀₁₂₃₄₅₆₇₈₉) for readability.
+
+    By default converts subscripts/superscripts to Unicode characters
+    (₀₁₂₃₄₅₆₇₈₉) for readability in plain-text contexts (PDF/Word fallback
+    text). Pass html_sub_sup=True to wrap them in <sub>/<sup> tags instead —
+    used when this text is spliced into ordinary paragraph text, which is
+    rendered through the same <sub>/<sup>-aware pipeline as the rest of the
+    document (see _run_text_with_fmt in docx_parser.py).
     """
     if not omml_str:
         return ""
@@ -59,43 +65,41 @@ def extract_equation_text(omml_str: str) -> str:
                 for child in elem:
                     result += process_element(child)
 
-            # Script subscript (m:sSub: base + subscript)
+            # Script subscript (m:sSub: base + subscript). The 'e' (base) and
+            # 'sub' (subscript) children are processed as-is — 'sub' already
+            # applies the subscript conversion itself, so it isn't repeated here.
             elif tag_name == 'sSub':
-                # Get base from m:e (element)
                 for child in elem:
                     child_tag = get_tag_name(child)
-                    if child_tag == 'e':
+                    if child_tag in ('e', 'sub'):
                         result += process_element(child)
-                    elif child_tag == 'sub':
-                        # Convert subscript text
-                        sub_text = process_element(child)
-                        result += ''.join(subscript_map.get(c, c) for c in sub_text)
 
-            # Script superscript (m:sSup: base + superscript)
+            # Script superscript (m:sSup: base + superscript). Same note as sSub.
             elif tag_name == 'sSup':
-                # Get base from m:e (element)
                 for child in elem:
                     child_tag = get_tag_name(child)
-                    if child_tag == 'e':
+                    if child_tag in ('e', 'sup'):
                         result += process_element(child)
-                    elif child_tag == 'sup':
-                        # Convert superscript text
-                        sup_text = process_element(child)
-                        result += ''.join(superscript_map.get(c, c) for c in sup_text)
 
             # Regular subscript (m:sub)
             elif tag_name == 'sub':
                 sub_text = ""
                 for child in elem:
                     sub_text += process_element(child)
-                result += ''.join(subscript_map.get(c, c) for c in sub_text)
+                if html_sub_sup:
+                    result += f'<sub>{sub_text}</sub>'
+                else:
+                    result += ''.join(subscript_map.get(c, c) for c in sub_text)
 
             # Regular superscript (m:sup)
             elif tag_name == 'sup':
                 sup_text = ""
                 for child in elem:
                     sup_text += process_element(child)
-                result += ''.join(superscript_map.get(c, c) for c in sup_text)
+                if html_sub_sup:
+                    result += f'<sup>{sup_text}</sup>'
+                else:
+                    result += ''.join(superscript_map.get(c, c) for c in sup_text)
 
             # Fraction (m:f: numerator / denominator)
             elif tag_name == 'f':
@@ -160,6 +164,17 @@ def extract_equation_text(omml_str: str) -> str:
     return ""
 
 
+# Property/formatting elements that carry no visible math content — must be
+# skipped entirely (not recursed into) or they generate empty <mrow/> noise
+# and, for sSub/sSup, get misidentified as if they were actual base/script
+# content (see the sSub bug this replaces).
+_MATHML_SKIP_TAGS = {
+    'rPr', 'rFonts', 'sz', 'szCs', 'i', 'b', 'sty', 'nor', 'ctrlPr',
+    'sSubPr', 'sSupPr', 'sSubSupPr', 'fPr', 'radPr', 'oMathParaPr',
+    'jc', 'proofErr',
+}
+
+
 def mathml_from_omml(omml_str: str) -> str:
     """
     Convert OMML (Office Math Markup Language) to MathML.
@@ -169,100 +184,140 @@ def mathml_from_omml(omml_str: str) -> str:
         return ""
 
     try:
-        # Parse OMML
         omml = etree.fromstring(omml_str.encode('utf-8'))
 
         def tag_name(elem):
             """Get local tag name without namespace."""
             return elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
 
+        def wrap_children(elem):
+            """Wrap an element's non-property children in a single <mrow>."""
+            mrow = etree.Element("mrow")
+            for child in elem:
+                if tag_name(child) in _MATHML_SKIP_TAGS:
+                    continue
+                node = omml_to_mml(child)
+                if node is not None:
+                    mrow.append(node)
+            return mrow
+
         def omml_to_mml(elem):
-            """Recursively convert OMML element to MathML element."""
+            """Recursively convert an OMML element to a MathML element (or
+            None for property/formatting elements that carry no content)."""
             tname = tag_name(elem)
+            if tname in _MATHML_SKIP_TAGS:
+                return None
 
             # Text element → mi (identifier) or mn (number)
             if tname == 't':
                 text = elem.text or ""
-                mml = etree.Element("mi")
+                mml = etree.Element("mn" if re.fullmatch(r'[0-9]+(\.[0-9]+)?', text) else "mi")
                 mml.text = text
                 return mml
 
-            # Paragraph (m:oMath)
-            elif tname == 'oMath':
-                mml = etree.Element("mrow")
-                for child in elem:
-                    mml.append(omml_to_mml(child))
-                return mml
-
-            # Run (m:r) → process children
-            elif tname == 'r':
-                mml = etree.Element("mrow")
-                for child in elem:
-                    mml.append(omml_to_mml(child))
-                return mml
+            # Pure grouping containers — oMath/oMathPara (root), r (run),
+            # e (base/element wrapper), sub/sup (script content when reached
+            # directly, e.g. via a bare m:sub outside sSub).
+            if tname in ('oMath', 'oMathPara', 'r', 'e', 'sub', 'sup', 'base'):
+                return wrap_children(elem)
 
             # Fraction (m:f: numerator/denominator)
-            elif tname == 'f':
+            if tname == 'f':
                 mml = etree.Element("mfrac")
+                num_node = den_node = None
                 for child in elem:
-                    child_tag = tag_name(child)
-                    if child_tag == 'num':
-                        num = etree.Element("mrow")
-                        for c in child:
-                            num.append(omml_to_mml(c))
-                        mml.append(num)
-                    elif child_tag == 'den':
-                        den = etree.Element("mrow")
-                        for c in child:
-                            den.append(omml_to_mml(c))
-                        mml.append(den)
+                    ctag = tag_name(child)
+                    if ctag == 'num':
+                        num_node = wrap_children(child)
+                    elif ctag == 'den':
+                        den_node = wrap_children(child)
+                mml.append(num_node if num_node is not None else etree.Element("mrow"))
+                mml.append(den_node if den_node is not None else etree.Element("mrow"))
                 return mml
 
-            # Subscript (m:sSub or m:sub)
-            elif tname in ['sSub', 'sub']:
+            # Subscript (m:sSub: base 'e' + subscript 'sub'). The 'sub' child
+            # is a content container (like 'e'), not another sSub — must be
+            # unwrapped with wrap_children directly, not re-dispatched.
+            if tname == 'sSub':
                 mml = etree.Element("msub")
+                base = sub = None
                 for child in elem:
-                    child_tag = tag_name(child)
-                    if child_tag == 'e' or child_tag == 'base':
-                        mml.append(omml_to_mml(child))
-                    elif child_tag == 'sub':
-                        mml.append(omml_to_mml(child))
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = wrap_children(child)
+                    elif ctag == 'sub':
+                        sub = wrap_children(child)
+                mml.append(base if base is not None else etree.Element("mrow"))
+                mml.append(sub if sub is not None else etree.Element("mrow"))
                 return mml
 
-            # Superscript (m:sSup or m:sup)
-            elif tname in ['sSup', 'sup']:
+            # Superscript (m:sSup: base 'e' + superscript 'sup'). Same note as sSub.
+            if tname == 'sSup':
                 mml = etree.Element("msup")
+                base = sup = None
                 for child in elem:
-                    child_tag = tag_name(child)
-                    if child_tag == 'e' or child_tag == 'base':
-                        mml.append(omml_to_mml(child))
-                    elif child_tag == 'sup':
-                        mml.append(omml_to_mml(child))
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = wrap_children(child)
+                    elif ctag == 'sup':
+                        sup = wrap_children(child)
+                mml.append(base if base is not None else etree.Element("mrow"))
+                mml.append(sup if sup is not None else etree.Element("mrow"))
                 return mml
 
-            # Element (m:e) → process children
-            elif tname == 'e':
-                mml = etree.Element("mrow")
+            # Combined sub+superscript (m:sSubSup: base 'e' + 'sub' + 'sup')
+            if tname == 'sSubSup':
+                mml = etree.Element("msubsup")
+                base = sub = sup = None
                 for child in elem:
-                    mml.append(omml_to_mml(child))
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = wrap_children(child)
+                    elif ctag == 'sub':
+                        sub = wrap_children(child)
+                    elif ctag == 'sup':
+                        sup = wrap_children(child)
+                mml.append(base if base is not None else etree.Element("mrow"))
+                mml.append(sub if sub is not None else etree.Element("mrow"))
+                mml.append(sup if sup is not None else etree.Element("mrow"))
                 return mml
 
-            # Default: wrap children in mrow
-            else:
-                mml = etree.Element("mrow")
+            # Radical / square root (m:rad: optional degree 'deg' + radicand 'e')
+            if tname == 'rad':
+                base = etree.Element("mrow")
+                deg_node = None
                 for child in elem:
-                    mml.append(omml_to_mml(child))
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = wrap_children(child)
+                    elif ctag == 'deg' and len(child):
+                        deg_node = wrap_children(child)
+                if deg_node is not None:
+                    mml = etree.Element("mroot")
+                    mml.append(base)
+                    mml.append(deg_node)
+                else:
+                    mml = etree.Element("msqrt")
+                    mml.append(base)
                 return mml
 
-        # Convert OMML to MathML
+            # Delimiter / bracket (m:d) — the visual bracket characters live
+            # in dPr attributes rather than text; just group the enclosed content.
+            if tname == 'd':
+                return wrap_children(elem)
+
+            # Default: group any unrecognised container's children
+            return wrap_children(elem)
+
         mml_root = omml_to_mml(omml)
+        if mml_root is None:
+            return ""
 
         # Wrap in math element with proper namespace
         math = etree.Element("math", xmlns="http://www.w3.org/1998/Math/MathML")
         math.set("display", "block")
         math.append(mml_root)
 
-        # Serialize to string
         return etree.tostring(math, encoding="unicode", pretty_print=False)
 
     except Exception as e:
