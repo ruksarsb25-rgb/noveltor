@@ -343,28 +343,37 @@ def _render_content_blocks(sec: dict) -> str:
             elif btype == "figure":
                 html += _render_figure_block(block)
             elif btype == "equation":
-                # Render equation: prefer LaTeX/MathML with fallback to text
+                # WeasyPrint (the PDF renderer) has no MathML layout support at
+                # all — <mfrac>/<msub> just get flattened into run-together text
+                # with no separators (e.g. a fraction's numerator and denominator
+                # concatenated with no "/" between them). So for PDF, MathML is
+                # unusable regardless of how correct it is; prefer the plain-text
+                # extraction (readable, with real Unicode subscripts and "/") or
+                # the rendered image, and only fall back to MathML as a last
+                # resort in case a future WeasyPrint version adds support.
                 latex = block.get("latex", "").strip() if block.get("latex") else ""
                 mathml = block.get("mathml", "").strip() if block.get("mathml") else ""
                 text = block.get("text", "").strip() if block.get("text") else ""
                 label = block.get("label", "")
                 uri = block.get("data_uri", "")
 
-                # Priority 1: MathML (proper formula rendering in PDF)
-                if mathml:
-                    html += f'<div class="equation mathml-equation">{mathml}</div>'
-                # Priority 2: LaTeX text (selectable/copyable in PDF)
-                elif latex:
-                    safe_latex = _e(latex)
-                    html += f'<div class="equation latex-equation">$$\n{safe_latex}\n$$</div>'
-                # Priority 3: Plain text representation
-                elif text:
+                # Priority 1: Plain text representation (selectable/copyable,
+                # correctly shows fractions and subscripts as Unicode)
+                if text:
                     safe_text = _e(text)
                     label_str = f"<strong>{_e(label)}:</strong> " if label else "<strong>Equation:</strong> "
                     html += f'<div class="equation">{label_str}{safe_text}</div>'
-                # Priority 4: Image fallback
+                # Priority 2: Image fallback (pixel-perfect but not selectable)
                 elif uri:
                     html += f'<div style="text-align:center;margin:6pt 0;"><img src="{uri}" style="max-height:100pt;max-width:100%;" alt="equation"/></div>'
+                # Priority 3: LaTeX source (readable to a technical reader even unrendered)
+                elif latex:
+                    safe_latex = _e(latex)
+                    html += f'<div class="equation latex-equation">$$\n{safe_latex}\n$$</div>'
+                # Priority 4: MathML — WeasyPrint can't lay this out, kept only
+                # as a last resort when nothing else is available.
+                elif mathml:
+                    html += f'<div class="equation mathml-equation">{mathml}</div>'
                 else:
                     # Last resort: empty equation placeholder
                     html += '<div class="equation"><em>Equation unavailable</em></div>'
@@ -584,8 +593,6 @@ def build_html(article: dict, two_col: bool = False) -> str:
 <head>
 <meta charset="UTF-8">
 <style>{css}</style>
-<!-- Support for MathML rendering -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mathml/2.7.0/mathml.min.js"></script>
 </head>
 <body{body_class}>
 {header}

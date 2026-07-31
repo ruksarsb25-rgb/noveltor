@@ -174,6 +174,8 @@ _MATHML_SKIP_TAGS = {
     'jc', 'proofErr',
 }
 
+_FENCE_CHARS = set('()[]{}')
+
 
 def mathml_from_omml(omml_str: str) -> str:
     """
@@ -211,6 +213,23 @@ def mathml_from_omml(omml_str: str) -> str:
             # Text element → mi (identifier) or mn (number)
             if tname == 't':
                 text = elem.text or ""
+                if any(c in _FENCE_CHARS for c in text):
+                    # Bracket characters mixed into a multi-char identifier run
+                    # (e.g. "Degradation Efficiency (%)") — split them out as
+                    # their own <mo> operator elements rather than leaving them
+                    # inside <mi> text. Some MathML renderers mishandle fence
+                    # punctuation left inside an identifier token.
+                    mrow = etree.Element("mrow")
+                    for piece in re.split(r'([()\[\]{}])', text):
+                        if not piece:
+                            continue
+                        if piece in _FENCE_CHARS:
+                            node = etree.Element("mo")
+                        else:
+                            node = etree.Element("mn" if re.fullmatch(r'[0-9]+(\.[0-9]+)?', piece) else "mi")
+                        node.text = piece
+                        mrow.append(node)
+                    return mrow
                 mml = etree.Element("mn" if re.fullmatch(r'[0-9]+(\.[0-9]+)?', text) else "mi")
                 mml.text = text
                 return mml
