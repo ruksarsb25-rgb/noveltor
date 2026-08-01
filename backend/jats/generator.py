@@ -495,11 +495,17 @@ def _text(el: Element, value: str) -> Element:
 _CITE_RE = re.compile(r'\[(\d[\d,;\s–—\-]*\d|\d)\]')
 
 
+_BOLD_RE   = re.compile(r'<(/?)strong>', re.IGNORECASE)
+_ITALIC_RE = re.compile(r'<(/?)em>', re.IGNORECASE)
+
+
 def _mixed(el: Element, text: str) -> Element:
     """
     Set element content as proper JATS XML mixed content:
       - <sub>…</sub> / <sup>…</sup> HTML tags from the parser
         → real XML <sub>/<sup> child elements
+      - <strong>…</strong> / <em>…</em> tags from the Bold/Italic toolbar
+        → real XML <bold>/<italic> child elements (JATS's tag names)
       - [N] / [N,M] / [N-M] citation markers
         → <xref ref-type="bibr" rid="BIBR-N"><sup>N</sup></xref>
 
@@ -509,7 +515,10 @@ def _mixed(el: Element, text: str) -> Element:
         el.text = ""
         return el
 
-    # 1. Convert [N] / [N,M] citation markers to xref XML markup
+    # 1. Rename HTML strong/em tags to their JATS equivalents bold/italic
+    text = _ITALIC_RE.sub(r'<\1italic>', _BOLD_RE.sub(r'<\1bold>', text))
+
+    # 2. Convert [N] / [N,M] citation markers to xref XML markup
     def _cite_to_xref(m):
         nums = re.findall(r'\d+', m.group(1))
         # Handle ranges like [1-3] → expand to 1,2,3
@@ -526,10 +535,10 @@ def _mixed(el: Element, text: str) -> Element:
 
     marked = _CITE_RE.sub(_cite_to_xref, text)
 
-    # 2. Ensure any bare & not already an entity is escaped for XML parsing
+    # 3. Ensure any bare & not already an entity is escaped for XML parsing
     safe = re.sub(r'&(?!(?:amp|lt|gt|quot|apos);)', '&amp;', marked)
 
-    # 3. Parse as an XML fragment and copy children into el
+    # 4. Parse as an XML fragment and copy children into el
     try:
         frag = fromstring(f'<r>{safe}</r>')
         el.text = frag.text

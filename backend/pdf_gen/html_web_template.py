@@ -15,7 +15,7 @@ def _e(s) -> str:
 
 _URL_RE      = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
 _CITE_RE     = re.compile(r'\[([\d,\s–—-]+)\]')
-_SUB_SUP_RE  = re.compile(r'&lt;(/?(?:sub|sup))&gt;', re.IGNORECASE)
+_SUB_SUP_RE  = re.compile(r'&lt;(/?(?:sub|sup|strong|em))&gt;', re.IGNORECASE)
 
 
 def _linkify(text: str) -> str:
@@ -51,7 +51,8 @@ def _citify(text: str) -> str:
 
 
 def _e_fmt(s) -> str:
-    """HTML-escape but restore <sub>/<sup> tags produced by the parser."""
+    """HTML-escape but restore <sub>/<sup>/<strong>/<em> tags produced by the
+    parser or added via the Bold/Italic toolbar in the Sections screen."""
     return _SUB_SUP_RE.sub(r'<\1>', _html.escape(str(s or ""), quote=False))
 
 

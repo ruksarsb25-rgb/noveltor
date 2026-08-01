@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button, Card } from "../components/FormField.jsx";
-import { FormField, Input, Textarea, Select } from "../components/FormField.jsx";
+import { FormField, Input, Textarea, RichTextarea, Select } from "../components/FormField.jsx";
 import { SECTION_TYPES, defaultSection, sectionBodyText, setSectionBody, sectionTableBlocks, sectionFigureBlocks } from "../store.js";
 import toast from "react-hot-toast";
 
@@ -81,7 +81,7 @@ function SortableSection({ section, onChange, onRemove }) {
             <button onClick={onRemove} className="text-red-400 hover:text-red-600 p-1 mt-0.5">✕</button>
           </div>
 
-          <Textarea
+          <RichTextarea
             value={sectionBodyText(section)}
             onChange={(e) => onChange(setSectionBody(section, e.target.value))}
             placeholder="Section body text…"
@@ -111,7 +111,7 @@ function SortableSection({ section, onChange, onRemove }) {
                 />
                 <button onClick={() => removeSub(i)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
               </div>
-              <Textarea
+              <RichTextarea
                 value={sectionBodyText(sub)}
                 onChange={(e) => updateSub(i, "body", e.target.value)}
                 placeholder="Subsection body…"

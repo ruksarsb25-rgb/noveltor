@@ -27,10 +27,11 @@ _TYPE_LABELS = {
 def _e(s) -> str:
     return _html.escape(str(s or ""), quote=False)
 
-_SUB_SUP_RE = re.compile(r'&lt;(/?(?:sub|sup))&gt;', re.IGNORECASE)
+_SUB_SUP_RE = re.compile(r'&lt;(/?(?:sub|sup|strong|em))&gt;', re.IGNORECASE)
 
 def _e_fmt(s) -> str:
-    """Like _e but restores <sub>/<sup> tags from parser-produced text."""
+    """Like _e but restores <sub>/<sup>/<strong>/<em> tags from parser- or
+    editor-produced text (Bold/Italic toolbar in the Sections screen)."""
     return _SUB_SUP_RE.sub(r'<\1>', _html.escape(str(s or ""), quote=False))
 
 

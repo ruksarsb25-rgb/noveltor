@@ -21,12 +21,13 @@ function citify(text) {
 }
 
 function safeHtml(text) {
-  // Escape HTML but preserve <sub>/<sup> tags produced by the parser.
+  // Escape HTML but preserve <sub>/<sup>/<strong>/<em> tags produced by the
+  // parser or added via the Bold/Italic toolbar in the Sections screen.
   return (text || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/&lt;(\/?(?:sub|sup))&gt;/gi, "<$1>");
+    .replace(/&lt;(\/?(?:sub|sup|strong|em))&gt;/gi, "<$1>");
 }
 import toast from "react-hot-toast";
 import { API_BASE } from "../utils/api.js";

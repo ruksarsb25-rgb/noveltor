@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 
 export function FormField({ label, error, hint, children, required }) {
   return (
@@ -31,6 +31,83 @@ export function Textarea({ className = "", ...props }) {
       className={`border border-slate-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-[#0F3557]/30 focus:border-[#0F3557] resize-y min-h-[80px] ${className}`}
       {...props}
     />
+  );
+}
+
+const RICH_TEXT_TAGS = { bold: "strong", italic: "em" };
+
+/**
+ * Textarea with a Bold/Italic toolbar. Formatting wraps the current
+ * selection in <strong>/<em> tags — the same convention the parser already
+ * uses for <sub>/<sup> — so it round-trips through the existing preview,
+ * PDF, web, and JATS XML export pipelines without special-casing.
+ */
+export function RichTextarea({ value, onChange, className = "", ...props }) {
+  const ref = useRef(null);
+
+  const toggleTag = (kind) => {
+    const el = ref.current;
+    if (!el) return;
+    const tag = RICH_TEXT_TAGS[kind];
+    const open = `<${tag}>`;
+    const close = `</${tag}>`;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const text = value || "";
+    const selected = text.slice(start, end);
+
+    const before = text.slice(0, start);
+    const after = text.slice(end);
+    const alreadyWrapped = before.endsWith(open) && after.startsWith(close);
+
+    let nextValue, selStart, selEnd;
+    if (alreadyWrapped) {
+      // Toggle off: strip the surrounding tags
+      nextValue = before.slice(0, -open.length) + selected + after.slice(close.length);
+      selStart = start - open.length;
+      selEnd = end - open.length;
+    } else {
+      // Wrap selection (or insert an empty pair with cursor in between)
+      nextValue = before + open + selected + close + after;
+      selStart = start + open.length;
+      selEnd = selStart + selected.length;
+    }
+
+    onChange({ target: { value: nextValue } });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(selStart, selEnd);
+    });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <button
+          type="button"
+          onClick={() => toggleTag("bold")}
+          title="Bold selected text"
+          className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-100"
+        >
+          B
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleTag("italic")}
+          title="Italicize selected text"
+          className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-white text-xs italic text-slate-600 hover:bg-slate-100"
+        >
+          I
+        </button>
+      </div>
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={onChange}
+        className={`border border-slate-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-[#0F3557]/30 focus:border-[#0F3557] resize-y min-h-[80px] ${className}`}
+        {...props}
+      />
+    </div>
   );
 }
 
