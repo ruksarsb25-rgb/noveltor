@@ -57,15 +57,14 @@ def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
     """
     from utils.latex_converter import LaTeXGenerator
 
-    # Generate LaTeX source
-    from utils.latex_converter import LaTeXGenerator
-
-    generator = LaTeXGenerator(article)
-    latex_source = generator.generate()
-
-    # Create temporary directory for LaTeX compilation
+    # Create temporary directory for LaTeX compilation first, so the
+    # generator can decode and write figure/logo images into it while
+    # building the .tex source (\includegraphics needs real files on disk).
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
+
+        generator = LaTeXGenerator(article, images_dir=tmpdir)
+        latex_source = generator.generate()
 
         # Write LaTeX source to file
         tex_file = tmpdir / "document.tex"
@@ -81,7 +80,7 @@ def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
                     str(tex_file)
                 ],
                 capture_output=True,
-                timeout=30
+                timeout=60
             )
 
             if result.returncode != 0:

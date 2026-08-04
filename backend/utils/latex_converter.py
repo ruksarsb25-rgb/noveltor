@@ -5,6 +5,7 @@ Handles equations, sections, references, figures, and proper mathematical typese
 
 import re
 import unicodedata
+from pathlib import Path
 from typing import Dict, List, Any
 
 from utils.equations import _LATEX_SYMBOL_MAP, _normalize_math_alphanumerics
@@ -126,7 +127,14 @@ def equation_to_latex(equation_text: str) -> str:
 class LaTeXGenerator:
     """Generate complete LaTeX documents from article data."""
 
-    def __init__(self, article: Dict[str, Any]):
+    def __init__(self, article: Dict[str, Any], images_dir=None):
+        """
+        images_dir: directory to write decoded figure/logo images into, so
+        \\includegraphics can reference them by absolute path. Pass the same
+        directory pdflatex will compile in (pdf_latex.py creates it before
+        constructing this generator). None disables image embedding — the
+        .tex source is still valid, just without figures.
+        """
         self.article = article
         self.journal_name = article.get("journal_name", "Novel Future Publishing")
         self.title = article.get("title", "Untitled")
@@ -135,6 +143,34 @@ class LaTeXGenerator:
         self.keywords = article.get("keywords", [])
         self.sections = article.get("sections", [])
         self.references = article.get("references", [])
+        self.images_dir = images_dir
+        self._img_counter = 0
+
+    def _write_image(self, data_uri: str, prefix: str):
+        """Decode a data: URI image and write it to self.images_dir,
+        returning an absolute path for \\includegraphics. Returns None if
+        there's no images_dir, no data, or it fails to decode — callers
+        must handle that (e.g. fall back to a placeholder comment)."""
+        if not self.images_dir or not data_uri or "," not in data_uri:
+            return None
+        import base64
+        header, b64_data = data_uri.split(",", 1)
+        ext = "png"
+        if "jpeg" in header or "jpg" in header:
+            ext = "jpg"
+        elif "gif" in header:
+            ext = "gif"
+        try:
+            img_bytes = base64.b64decode(b64_data)
+        except Exception:
+            return None
+        self._img_counter += 1
+        path = Path(self.images_dir) / f"{prefix}{self._img_counter}.{ext}"
+        try:
+            path.write_bytes(img_bytes)
+        except Exception:
+            return None
+        return str(path)
 
     def escape_latex(self, text: str) -> str:
         """Escape special LaTeX characters and make plain-text Unicode
@@ -292,7 +328,19 @@ class LaTeXGenerator:
             elif block_type == "figure":
                 caption = block.get("caption", "")
                 label = block.get("label", "Figure")
-                latex += f"% {label}: {self.escape_latex(caption)}\n\n"
+                data_uri = block.get("data_uri", "")
+                img_path = self._write_image(data_uri, "fig")
+                if img_path or caption:
+                    latex += "\\begin{figure}[!htbp]\n\\centering\n"
+                    if img_path:
+                        latex += f"\\includegraphics[width=0.85\\textwidth]{{{img_path}}}\n"
+                    else:
+                        # No image data available — keep the caption/label
+                        # visible instead of silently dropping the figure.
+                        latex += f"\\fbox{{\\parbox{{0.6\\textwidth}}{{\\centering {self.escape_latex(label)}}}}}\n"
+                    if caption:
+                        latex += f"\\caption{{{self.escape_latex(caption)}}}\n"
+                    latex += "\\end{figure}\n\n"
 
         # Process subsections
         subsections = section.get("subsections", [])
@@ -357,6 +405,28 @@ class LaTeXGenerator:
         latex += "\\end{thebibliography}\n"
         return latex
 
+    def format_journal_header(self) -> str:
+        """
+        Journal branding (name, publisher, logo) printed above the title —
+        a self-contained block that doesn't touch \\title{}/\\author{}/
+        \\maketitle, so their formatting is unaffected either way.
+        """
+        journal_logo = self.article.get("journal_logo", "")
+        publisher_name = self.article.get("publisher_name", "")
+
+        lines = []
+        logo_path = self._write_image(journal_logo, "journal_logo")
+        if logo_path:
+            lines.append(f"\\includegraphics[height=1.4cm]{{{logo_path}}}")
+        if self.journal_name:
+            lines.append(f"\\textbf{{{self.escape_latex(self.journal_name)}}}")
+        if publisher_name:
+            lines.append(f"\\textit{{{self.escape_latex(publisher_name)}}}")
+
+        if not lines:
+            return ""
+        return "\\begin{center}\n" + " \\\\\n".join(lines) + "\n\\end{center}\n\\vspace{6pt}\n\n"
+
     def generate(self) -> str:
         """Generate complete LaTeX document."""
         latex = r"""\documentclass[11pt,a4paper]{article}
@@ -372,6 +442,9 @@ class LaTeXGenerator:
 \usepackage{authblk}
 
 \raggedbottom
+% A little breathing room between paragraphs — spacing only, the default
+% \parindent (and everything else about the existing text style) is untouched.
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
 
 """
 
@@ -387,6 +460,12 @@ class LaTeXGenerator:
         latex += "\\date{}\n\n"
 
         latex += "\\begin{document}\n\n"
+
+        # Journal header (name, publisher, logo) — printed above the title,
+        # entirely separate from \title{}/\author{}/\maketitle below so
+        # their existing formatting is untouched.
+        latex += self.format_journal_header()
+
         latex += "\\maketitle\n\n"
 
         # Abstract
