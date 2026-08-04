@@ -6,6 +6,32 @@ Handles equations, sections, references, figures, and proper mathematical typese
 import re
 from typing import Dict, List, Any
 
+from utils.equations import _LATEX_SYMBOL_MAP, _normalize_math_alphanumerics
+
+# Unicode subscript/superscript digits and letters → their plain ASCII form,
+# used to rebuild real LaTeX subscript/superscript math (e.g. "BaAl₂O₄" →
+# "BaAl$_{2}$O$_{4}$") for chemical formulas typed directly into prose text.
+_SUB_MAP = {
+    '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
+    '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
+    'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i', 'ⱼ': 'j',
+    'ₖ': 'k', 'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₒ': 'o',
+    'ₚ': 'p', 'ᵣ': 'r', 'ₛ': 's', 'ₜ': 't', 'ᵤ': 'u',
+    'ᵥ': 'v', 'ₓ': 'x', '₋': '-', '₊': '+', '₌': '=',
+}
+_SUP_MAP = {
+    '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+    '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+    'ᵃ': 'a', 'ᵇ': 'b', 'ᶜ': 'c', 'ᵈ': 'd', 'ᵉ': 'e',
+    'ᶠ': 'f', 'ᵍ': 'g', 'ʰ': 'h', 'ⁱ': 'i', 'ʲ': 'j',
+    'ᵏ': 'k', 'ˡ': 'l', 'ᵐ': 'm', 'ⁿ': 'n', 'ᵒ': 'o',
+    'ᵖ': 'p', 'ʳ': 'r', 'ˢ': 's', 'ᵗ': 't', 'ᵘ': 'u',
+    'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y', 'ᶻ': 'z',
+    '⁻': '-', '⁺': '+', '⁼': '=',
+}
+_SUB_RUN_RE = re.compile('[' + ''.join(_SUB_MAP) + ']+')
+_SUP_RUN_RE = re.compile('[' + ''.join(_SUP_MAP) + ']+')
+
 
 def equation_to_latex(equation_text: str) -> str:
     """
@@ -53,11 +79,22 @@ class LaTeXGenerator:
         self.references = article.get("references", [])
 
     def escape_latex(self, text: str) -> str:
-        """Escape special LaTeX characters."""
+        """Escape special LaTeX characters and make plain-text Unicode
+        (chemical-formula subscripts, Greek letters, dashes, …) safe for
+        pdflatex, which has no inputenc table for most of these — a raw
+        "₂" or "λ" byte sequence in the .tex source fails to compile.
+        """
         if not text:
             return ""
         text = str(text)
-        # Order matters: backslash first
+        text = text.replace('\xa0', ' ')  # non-breaking space
+        # Some authors paste/type styled Unicode math letters (e.g. "𝑘𝑡")
+        # directly into prose instead of using Word's Equation Editor —
+        # normalize to plain ASCII before anything else touches it.
+        text = _normalize_math_alphanumerics(text)
+
+        # 1. Escape LaTeX-reserved characters first, on the raw text — the
+        #    LaTeX commands inserted in step 2 must not be re-escaped.
         text = text.replace('\\', r'\textbackslash{}')
         text = text.replace('&', r'\&')
         text = text.replace('%', r'\%')
@@ -68,6 +105,21 @@ class LaTeXGenerator:
         text = text.replace('}', r'\}')
         text = text.replace('~', r'\textasciitilde{}')
         text = text.replace('^', r'\textasciicircum{}')
+
+        # 2. Unicode subscript/superscript digits (e.g. "BaAl₂O₄") → real
+        #    LaTeX subscript/superscript math, the standard way chemical
+        #    formulas are written in LaTeX.
+        text = _SUB_RUN_RE.sub(lambda m: '$_{' + ''.join(_SUB_MAP[c] for c in m.group()) + '}$', text)
+        text = _SUP_RUN_RE.sub(lambda m: '$^{' + ''.join(_SUP_MAP[c] for c in m.group()) + '}$', text)
+
+        # 3. Dashes — LaTeX's own text-mode ligatures
+        text = text.replace('—', '---').replace('–', '--')
+
+        # 4. Greek letters / math operators appearing in plain prose (e.g.
+        #    "λ - wavelength of Cu Kα radiation") — wrap each individually
+        #    in inline math since they're not valid outside math mode.
+        text = ''.join(f'${_LATEX_SYMBOL_MAP[c]}$' if c in _LATEX_SYMBOL_MAP else c for c in text)
+
         return text
 
     def format_authors(self) -> str:

@@ -3,6 +3,7 @@ Equation utilities for converting between formats (OMML, LaTeX, MathML).
 Supports multiple export formats: Word, XML/JATS, HTML, PDF.
 """
 import re
+import unicodedata
 from lxml import etree
 
 def extract_equation_text(omml_str: str, html_sub_sup: bool = False) -> str:
@@ -372,6 +373,7 @@ _LATEX_SYMBOL_MAP = {
     '∑': r'\sum', '∏': r'\prod', '∫': r'\int', '∂': r'\partial',
     '∇': r'\nabla', '√': r'\sqrt', '∈': r'\in', '∉': r'\notin',
     '∀': r'\forall', '∃': r'\exists', '∅': r'\emptyset', '°': r'^\circ',
+    '•': r'\bullet',  # e.g. •OH — a radical species dot, common in chemistry
     # OMML's invisible layout operators — no LaTeX equivalent, just drop them
     '⁡': '', '⁢': '', '⁣': '', '⁤': '',
 }
@@ -392,8 +394,29 @@ _LATEX_FUNC_NAMES = {
 _LATEX_WORD_RE = re.compile(r'[A-Za-z]{2,}')
 
 
+def _normalize_math_alphanumerics(text: str) -> str:
+    """
+    Word's equation editor sometimes stores italicized math variables using
+    Unicode "Mathematical Alphanumeric Symbols" codepoints (e.g. U+1D458
+    MATHEMATICAL ITALIC SMALL K, "𝑘") instead of plain ASCII — the italic
+    styling is baked into the character itself. LaTeX math mode already
+    italicizes plain letters automatically, and pdflatex has no glyph for
+    this Unicode block at all, so normalize back to plain ASCII (NFKD
+    compatibility decomposition maps these to their base Latin letter).
+    """
+    out = []
+    for ch in text:
+        if 0x1D400 <= ord(ch) <= 0x1D7FF:
+            decomposed = unicodedata.normalize('NFKD', ch)
+            out.append(decomposed[0] if decomposed else ch)
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+
 def _latex_symbols(text: str) -> str:
     """Apply the Unicode→LaTeX macro table character by character."""
+    text = _normalize_math_alphanumerics(text)
     return ''.join(_LATEX_SYMBOL_MAP.get(c, c) for c in text)
 
 
