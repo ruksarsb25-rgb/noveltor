@@ -4,9 +4,28 @@ Handles equations, sections, references, figures, and proper mathematical typese
 """
 
 import re
+import unicodedata
 from typing import Dict, List, Any
 
 from utils.equations import _LATEX_SYMBOL_MAP, _normalize_math_alphanumerics
+
+# HTML tags the rest of the app uses for inline formatting: <sub>/<sup> from
+# the DOCX parser (chemical formulas, citation numbers), <strong>/<em> from
+# the Sections screen's Bold/Italic toolbar. escape_latex() must convert
+# these to real LaTeX before general escaping, or they show up as literal
+# "<sub>2</sub>" text in the compiled PDF.
+_SUB_TAG_RE = re.compile(r'<sub>(.*?)</sub>', re.IGNORECASE | re.DOTALL)
+_SUP_TAG_RE = re.compile(r'<sup>(.*?)</sup>', re.IGNORECASE | re.DOTALL)
+_STRONG_TAG_RE = re.compile(r'<strong>(.*?)</strong>', re.IGNORECASE | re.DOTALL)
+_EM_TAG_RE = re.compile(r'<em>(.*?)</em>', re.IGNORECASE | re.DOTALL)
+
+# inputenc's utf8 table reliably covers Latin-1 Supplement (À-ÿ) and, in
+# modern TeX Live, Latin Extended-A (Ā-ſ, e.g. ă, ş, ț) too — confirmed
+# empirically: a real reference list with ă/ş/ü/í/ó in author names compiled
+# fine, only a much rarer Latin Extended-B letter (ƫ) failed. Anything
+# outside this range is a compile-failure risk we have no specific mapping
+# for and falls through to the transliteration safety net below.
+_SAFE_UNICODE_RE = re.compile('[À-ſ]')
 
 # Unicode subscript/superscript digits and letters → their plain ASCII form,
 # used to rebuild real LaTeX subscript/superscript math (e.g. "BaAl₂O₄" →
@@ -31,6 +50,37 @@ _SUP_MAP = {
 }
 _SUB_RUN_RE = re.compile('[' + ''.join(_SUB_MAP) + ']+')
 _SUP_RUN_RE = re.compile('[' + ''.join(_SUP_MAP) + ']+')
+
+
+_LATIN_LETTER_NAME_RE = re.compile(r'LATIN (SMALL|CAPITAL) LETTER ([A-Z]+)')
+
+
+def _ascii_fallback(ch: str) -> str:
+    """Pass an ASCII or Latin-1/Extended-A character through unchanged
+    (inputenc handles both); transliterate anything else to its closest
+    plain-ASCII form. Most accented letters decompose via NFKD (stripping
+    the combining mark leaves the base letter); some rare ones don't (e.g.
+    "ƫ" LATIN SMALL LETTER T WITH PALATAL HOOK has no decomposition at all —
+    Unicode never gave it one), so fall back to parsing "LATIN ... LETTER X"
+    out of the character's own name. Truly unrecognisable characters (other
+    scripts, symbols) are dropped rather than crashing the whole export."""
+    if ord(ch) < 128 or _SAFE_UNICODE_RE.match(ch):
+        return ch
+
+    decomposed = unicodedata.normalize('NFKD', ch)
+    base = ''.join(c for c in decomposed if not unicodedata.combining(c))
+    if base and base != ch:
+        return base
+
+    try:
+        name = unicodedata.name(ch)
+    except ValueError:
+        return ''
+    m = _LATIN_LETTER_NAME_RE.match(name)
+    if m:
+        letter = m.group(2)
+        return letter if m.group(1) == 'CAPITAL' else letter.lower()
+    return ''
 
 
 def equation_to_latex(equation_text: str) -> str:
@@ -93,8 +143,10 @@ class LaTeXGenerator:
         # normalize to plain ASCII before anything else touches it.
         text = _normalize_math_alphanumerics(text)
 
-        # 1. Escape LaTeX-reserved characters first, on the raw text — the
-        #    LaTeX commands inserted in step 2 must not be re-escaped.
+        # 1. Escape LaTeX-reserved characters first, on the raw text. This
+        #    never touches < or >, so the HTML tags step 2 looks for survive
+        #    intact — and the LaTeX commands inserted from here on must not
+        #    be re-escaped, which is why this step runs before all of them.
         text = text.replace('\\', r'\textbackslash{}')
         text = text.replace('&', r'\&')
         text = text.replace('%', r'\%')
@@ -106,19 +158,37 @@ class LaTeXGenerator:
         text = text.replace('~', r'\textasciitilde{}')
         text = text.replace('^', r'\textasciicircum{}')
 
-        # 2. Unicode subscript/superscript digits (e.g. "BaAl₂O₄") → real
+        # 2. The app's own inline-formatting convention — <sub>/<sup> from
+        #    the DOCX parser, <strong>/<em> from the Bold/Italic toolbar —
+        #    to real LaTeX. Content is already escaped from step 1, so this
+        #    is just wrapping, not touching characters that need escaping.
+        text = _SUB_TAG_RE.sub(lambda m: '$_{' + m.group(1) + '}$', text)
+        text = _SUP_TAG_RE.sub(lambda m: '$^{' + m.group(1) + '}$', text)
+        text = _STRONG_TAG_RE.sub(lambda m: r'\textbf{' + m.group(1) + '}', text)
+        text = _EM_TAG_RE.sub(lambda m: r'\textit{' + m.group(1) + '}', text)
+
+        # 3. Unicode subscript/superscript digits (e.g. "BaAl₂O₄") → real
         #    LaTeX subscript/superscript math, the standard way chemical
         #    formulas are written in LaTeX.
         text = _SUB_RUN_RE.sub(lambda m: '$_{' + ''.join(_SUB_MAP[c] for c in m.group()) + '}$', text)
         text = _SUP_RUN_RE.sub(lambda m: '$^{' + ''.join(_SUP_MAP[c] for c in m.group()) + '}$', text)
 
-        # 3. Dashes — LaTeX's own text-mode ligatures
+        # 4. Dashes — LaTeX's own text-mode ligatures
         text = text.replace('—', '---').replace('–', '--')
 
-        # 4. Greek letters / math operators appearing in plain prose (e.g.
+        # 5. Greek letters / math operators appearing in plain prose (e.g.
         #    "λ - wavelength of Cu Kα radiation") — wrap each individually
         #    in inline math since they're not valid outside math mode.
         text = ''.join(f'${_LATEX_SYMBOL_MAP[c]}$' if c in _LATEX_SYMBOL_MAP else c for c in text)
+
+        # 6. Safety net: any character still non-ASCII and outside the
+        #    Latin-1 Supplement range (which inputenc reliably covers) is a
+        #    compile-failure risk we have no specific mapping for (e.g. "ƫ"
+        #    U+01AB, an obscure Romanian letter that showed up in a
+        #    reference's author name and isn't in inputenc's table).
+        #    Transliterate to its closest plain-ASCII form via NFKD rather
+        #    than crash the whole export over one rare diacritic.
+        text = ''.join(_ascii_fallback(c) for c in text)
 
         return text
 
