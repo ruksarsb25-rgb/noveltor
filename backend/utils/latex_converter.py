@@ -10,6 +10,16 @@ from typing import Dict, List, Any
 
 from utils.equations import _LATEX_SYMBOL_MAP, _normalize_math_alphanumerics
 
+# Article-type badge labels — same mapping as the WeasyPrint template
+# (_TYPE_LABELS in html_template.py) so both PDFs show the same text.
+_TYPE_LABELS = {
+    "Research Article":        "RESEARCH ARTICLE",
+    "Review":                  "REVIEW ARTICLE",
+    "Conference Proceeding":   "CONFERENCE PROCEEDING",
+    "Enhanced Poster Abstract": "ENHANCED POSTER ABSTRACT",
+    "Conference Report":       "CONFERENCE REPORT",
+}
+
 # HTML tags the rest of the app uses for inline formatting: <sub>/<sup> from
 # the DOCX parser (chemical formulas, citation numbers), <strong>/<em> from
 # the Sections screen's Bold/Italic toolbar. escape_latex() must convert
@@ -236,48 +246,106 @@ class LaTeXGenerator:
 
         return text
 
-    def format_authors(self) -> str:
-        """
-        Build \\author[]{}/\\affil[]{} commands (the authblk package) —
-        each author gets a numbered superscript marker linking to their
-        affiliation, and the corresponding author's email is attached as a
-        \\thanks{} footnote. Returns the complete set of commands, not
-        wrapped in an outer \\author{} — generate() inserts this as-is.
-        """
-        if not self.authors:
-            return ""
+    def _build_affils(self) -> List[str]:
+        """Unique affiliations in first-seen order — same dedup logic as
+        the WeasyPrint template's _build_affils(), so both outputs agree
+        on affiliation numbering for the same article."""
+        seen: List[str] = []
+        for a in self.authors:
+            aff = (a.get("affiliation") or "").strip()
+            if aff and aff not in seen:
+                seen.append(aff)
+        return seen
 
-        # Number each unique affiliation in first-seen order
-        affil_numbers: Dict[str, int] = {}
-        affil_order: List[str] = []
-        for author in self.authors:
-            aff = (author.get('affiliation') or '').strip()
-            if aff and aff not in affil_numbers:
-                affil_numbers[aff] = len(affil_order) + 1
-                affil_order.append(aff)
+    def format_title_block(self) -> str:
+        """
+        The full masthead: badges, title, authors-with-superscripts on one
+        line, numbered affiliations, corresponding-author email, dates, and
+        DOI — replacing \\maketitle entirely so we control layout precisely
+        (a plain \\maketitle+authblk block can grow taller than one page
+        for many authors and get pushed to page 2 by itself, leaving page 1
+        blank under the journal header). Mirrors the same field names and
+        author/affiliation logic as the WeasyPrint template (build_html in
+        html_template.py) so both PDFs show the same information.
+        """
+        article_type = self.article.get("article_type") or "Research Article"
+        type_label = _TYPE_LABELS.get(article_type, article_type.upper())
 
-        lines = []
-        for author in self.authors:
-            first_name = (author.get('first_name') or '').strip()
-            last_name = (author.get('last_name') or '').strip()
-            name = f"{first_name} {last_name}".strip()
+        parts = []
+
+        # Badges
+        parts.append(
+            "\\noindent"
+            f"\\colorbox{{nfpbadgeblue}}{{\\textcolor{{white}}{{\\small\\textbf{{ {self.escape_latex(type_label)} }}}}}}"
+            "\\hspace{4pt}"
+            "\\colorbox{nfpbadgegreen}{\\textcolor{white}{\\small\\textbf{ OPEN ACCESS }}}"
+            "\n\n"
+        )
+
+        # Title
+        parts.append(f"{{\\LARGE\\bfseries\\color{{nfpnavy}} {self.escape_latex(self.title)}\\par}}\n\n")
+
+        # Authors — one comma-joined line with superscript affiliation
+        # numbers and "*" for corresponding authors (matches build_html's
+        # authors_html construction exactly).
+        affils = self._build_affils()
+        multi_affil = len(affils) > 1
+        author_chunks = []
+        for a in self.authors:
+            name = f"{(a.get('first_name') or '').strip()} {(a.get('last_name') or '').strip()}".strip()
             if not name:
                 continue
+            sups = []
+            if multi_affil:
+                aff = (a.get("affiliation") or "").strip()
+                if aff in affils:
+                    sups.append(str(affils.index(aff) + 1))
+            if a.get("corresponding"):
+                sups.append("*")
+            chunk = self.escape_latex(name)
+            if sups:
+                chunk += f"\\textsuperscript{{{','.join(sups)}}}"
+            author_chunks.append(chunk)
+        if author_chunks:
+            parts.append(", ".join(author_chunks) + "\\par\\smallskip\n\n")
 
-            aff = (author.get('affiliation') or '').strip()
-            marker = f"[{affil_numbers[aff]}]" if aff in affil_numbers else ""
+        # Affiliations — numbered only when there's more than one
+        if affils:
+            aff_lines = []
+            for i, aff in enumerate(affils, 1):
+                prefix = f"\\textsuperscript{{{i}}}\\," if multi_affil else ""
+                aff_lines.append(f"{{\\small {prefix}{self.escape_latex(aff)}}}")
+            parts.append("\\par ".join(aff_lines) + "\\par\\smallskip\n\n")
 
-            thanks = ""
-            if author.get('corresponding') and author.get('email'):
-                email = self.escape_latex(author['email'])
-                thanks = f"\\thanks{{Corresponding author: {email}}}"
+        # Corresponding author email(s)
+        corresp_emails = [a.get("email") for a in self.authors if a.get("corresponding") and a.get("email")]
+        if corresp_emails:
+            label = "Corresponding authors" if len(corresp_emails) > 1 else "Corresponding author"
+            emails = ", ".join(self.escape_latex(e) for e in corresp_emails)
+            parts.append(f"{{\\small *{label}: {emails}}}\\par\\smallskip\n\n")
 
-            lines.append(f"\\author{marker}{{{self.escape_latex(name)}{thanks}}}")
+        # Dates
+        date_parts = []
+        if self.article.get("received_date"):
+            date_parts.append(f"\\textbf{{Received:}} {self.escape_latex(self.article['received_date'])}")
+        if self.article.get("accepted_date"):
+            date_parts.append(f"\\textbf{{Accepted:}} {self.escape_latex(self.article['accepted_date'])}")
+        if self.article.get("published_date"):
+            date_parts.append(f"\\textbf{{Published:}} {self.escape_latex(self.article['published_date'])}")
+        if date_parts:
+            parts.append("{\\small " + "\\quad ".join(date_parts) + "}\\par\\smallskip\n\n")
 
-        for aff in affil_order:
-            lines.append(f"\\affil[{affil_numbers[aff]}]{{{self.escape_latex(aff)}}}")
+        # DOI — \url{} does its own verbatim-style character handling, so
+        # the raw value goes in directly rather than through escape_latex()
+        # (which would double-escape any backslashes \url{} itself inserts
+        # no special chars for, and DOIs don't need LaTeX escaping anyway).
+        doi_val = (self.article.get("doi") or "").strip()
+        if doi_val:
+            parts.append(f"{{\\small \\textbf{{DOI:}} \\url{{https://doi.org/{doi_val}}}}}\\par\n\n")
 
-        return "\n".join(lines)
+        parts.append("\\vspace{4pt}\\noindent{\\color{nfpnavy}\\rule{\\linewidth}{1.2pt}}\\vspace{8pt}\n\n")
+
+        return "".join(parts)
 
     def format_section(self, section: Dict[str, Any], depth: int = 1) -> str:
         """Format a section with content and subsections."""
@@ -407,25 +475,35 @@ class LaTeXGenerator:
 
     def format_journal_header(self) -> str:
         """
-        Journal branding (name, publisher, logo) printed above the title —
-        a self-contained block that doesn't touch \\title{}/\\author{}/
-        \\maketitle, so their formatting is unaffected either way.
+        Journal branding row: cover thumbnail (left), "From the journal: /
+        Name" (center), publisher logo (right) — mirrors the same three
+        pieces of information as the WeasyPrint template's page-header, in
+        a plain LaTeX tabular instead of CSS flexbox.
         """
         journal_logo = self.article.get("journal_logo", "")
-        publisher_name = self.article.get("publisher_name", "")
-
-        lines = []
+        brand_logo = self.article.get("brand_logo", "")
         logo_path = self._write_image(journal_logo, "journal_logo")
-        if logo_path:
-            lines.append(f"\\includegraphics[height=1.4cm]{{{logo_path}}}")
-        if self.journal_name:
-            lines.append(f"\\textbf{{{self.escape_latex(self.journal_name)}}}")
-        if publisher_name:
-            lines.append(f"\\textit{{{self.escape_latex(publisher_name)}}}")
+        brand_path = self._write_image(brand_logo, "brand_logo")
 
-        if not lines:
+        if not (logo_path or self.journal_name or brand_path):
             return ""
-        return "\\begin{center}\n" + " \\\\\n".join(lines) + "\n\\end{center}\n\\vspace{6pt}\n\n"
+
+        left = f"\\includegraphics[width=1.3cm]{{{logo_path}}}" if logo_path else ""
+        center = ""
+        if self.journal_name:
+            center = (
+                "{\\small\\color{gray!70!black} From the journal:}\\\\[2pt]"
+                f"{{\\bfseries\\large\\color{{nfpnavy}} {self.escape_latex(self.journal_name)}}}"
+            )
+        right = f"\\includegraphics[width=2.0cm]{{{brand_path}}}" if brand_path else ""
+
+        return (
+            "\\noindent\n"
+            "\\begin{tabular}{@{}m{0.18\\textwidth}m{0.54\\textwidth}m{0.24\\textwidth}@{}}\n"
+            f"{left} & \\centering {center} & \\raggedleft {right} \\\\\n"
+            "\\end{tabular}\\par\n"
+            "\\vspace{4pt}\n\n"
+        )
 
     def generate(self) -> str:
         """Generate complete LaTeX document."""
@@ -439,7 +517,13 @@ class LaTeXGenerator:
 \usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{tabularx}
-\usepackage{authblk}
+\usepackage{array}
+\usepackage{xcolor}
+
+% Brand colors, matching the WeasyPrint template's palette
+\definecolor{nfpnavy}{HTML}{0F3557}
+\definecolor{nfpbadgeblue}{HTML}{2C6FBB}
+\definecolor{nfpbadgegreen}{HTML}{2E9E5B}
 
 \raggedbottom
 % A little breathing room between paragraphs — spacing only, the default
@@ -448,31 +532,21 @@ class LaTeXGenerator:
 
 """
 
-        # Title
-        latex += f"\\title{{{self.escape_latex(self.title)}}}\n"
-
-        # Authors — format_authors() returns complete \author[]{}/\affil[]{}
-        # commands (authblk), not a plain name list to wrap in \author{}.
-        if self.authors:
-            latex += f"{self.format_authors()}\n"
-
-        # Date
-        latex += "\\date{}\n\n"
-
         latex += "\\begin{document}\n\n"
 
-        # Journal header (name, publisher, logo) — printed above the title,
-        # entirely separate from \title{}/\author{}/\maketitle below so
-        # their existing formatting is untouched.
+        # Journal header, then the full masthead (badges, title, authors,
+        # affiliations, dates, DOI) built manually instead of \maketitle —
+        # a plain \maketitle+authblk block can grow taller than one page for
+        # many authors and gets pushed to page 2 entirely, leaving page 1
+        # with just the journal header and nothing else on it.
         latex += self.format_journal_header()
+        latex += self.format_title_block()
 
-        latex += "\\maketitle\n\n"
-
-        # Abstract
+        # Abstract — plain bold heading (not the indented "Abstract"
+        # environment) to match the journal's house style.
         if self.abstract:
-            latex += "\\begin{abstract}\n"
-            latex += f"{self.escape_latex(self.abstract)}\n"
-            latex += "\\end{abstract}\n\n"
+            latex += "{\\bfseries\\large ABSTRACT}\\par\\smallskip\n"
+            latex += f"{self.escape_latex(self.abstract)}\\par\n\n"
 
         # Keywords
         if self.keywords:
