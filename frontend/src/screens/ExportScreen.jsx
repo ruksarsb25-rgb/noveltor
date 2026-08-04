@@ -200,14 +200,14 @@ function ArticlePreview({ article }) {
 }
 
 /** Uniform toolbar button — same height, same font, same radius everywhere. */
-function ToolBtn({ children, onClick, disabled, loading, loadingLabel, primary }) {
+function ToolBtn({ children, onClick, disabled, loading, loadingLabel, primary, title }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 h-9 px-3 text-sm font-medium rounded-lg border transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed";
   const style = primary
     ? "bg-[#0F3557] text-white border-[#0F3557] hover:bg-[#0c2a45]"
     : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50";
   return (
-    <button className={`${base} ${style}`} onClick={onClick} disabled={disabled || loading}>
+    <button className={`${base} ${style}`} onClick={onClick} disabled={disabled || loading} title={title}>
       {loading ? (
         <>
           <span className={`w-3.5 h-3.5 border-2 ${primary ? "border-white border-t-transparent" : "border-slate-400 border-t-transparent"} rounded-full animate-spin`} />
@@ -222,6 +222,7 @@ export default function ExportScreen({ article }) {
   const [xml, setXml] = useState("");
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfLatexLoading, setPdfLatexLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState(false);
   const [webLoading, setWebLoading] = useState(false);
   const [xmlZipLoading, setXmlZipLoading] = useState(false);
@@ -331,6 +332,33 @@ export default function ExportScreen({ article }) {
       toast.error(e.message);
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const downloadPdfLatex = async () => {
+    setPdfLatexLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/export/pdf-latex`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "LaTeX PDF generation failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(article.title || "article").replace(/\s+/g, "_").slice(0, 60)}_latex.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("LaTeX PDF downloaded");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setPdfLatexLoading(false);
     }
   };
 
@@ -619,6 +647,16 @@ export default function ExportScreen({ article }) {
               </ToolBtn>
               <ToolBtn primary onClick={downloadPdf} disabled={pdfLoading} loading={pdfLoading} loadingLabel="Rendering…">
                 ⬇ PDF
+              </ToolBtn>
+              <ToolBtn
+                primary
+                onClick={downloadPdfLatex}
+                disabled={pdfLatexLoading}
+                loading={pdfLatexLoading}
+                loadingLabel="Compiling…"
+                title="Compiles equations with real LaTeX typesetting (proper fractions, Greek letters, etc.) instead of the default renderer"
+              >
+                ⬇ PDF (LaTeX)
               </ToolBtn>
               <ToolBtn primary onClick={downloadWord} disabled={wordLoading} loading={wordLoading} loadingLabel="Exporting…">
                 ⬇ Word
