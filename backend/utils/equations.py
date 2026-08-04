@@ -164,13 +164,14 @@ def extract_equation_text(omml_str: str, html_sub_sup: bool = False) -> str:
     return ""
 
 
-# Property/formatting elements that carry no visible math content — must be
-# skipped entirely (not recursed into) or they generate empty <mrow/> noise
-# and, for sSub/sSup, get misidentified as if they were actual base/script
+# OMML property/formatting elements that carry no visible math content —
+# shared by both the MathML and LaTeX converters below. Must be skipped
+# entirely (not recursed into) or they generate empty <mrow/> noise and,
+# for sSub/sSup, get misidentified as if they were actual base/script
 # content (see the sSub bug this replaces).
-_MATHML_SKIP_TAGS = {
+_OMML_PROPERTY_TAGS = {
     'rPr', 'rFonts', 'sz', 'szCs', 'i', 'b', 'sty', 'nor', 'ctrlPr',
-    'sSubPr', 'sSupPr', 'sSubSupPr', 'fPr', 'radPr', 'oMathParaPr',
+    'sSubPr', 'sSupPr', 'sSubSupPr', 'fPr', 'radPr', 'dPr', 'oMathParaPr',
     'jc', 'proofErr',
 }
 
@@ -196,7 +197,7 @@ def mathml_from_omml(omml_str: str) -> str:
             """Wrap an element's non-property children in a single <mrow>."""
             mrow = etree.Element("mrow")
             for child in elem:
-                if tag_name(child) in _MATHML_SKIP_TAGS:
+                if tag_name(child) in _OMML_PROPERTY_TAGS:
                     continue
                 node = omml_to_mml(child)
                 if node is not None:
@@ -207,7 +208,7 @@ def mathml_from_omml(omml_str: str) -> str:
             """Recursively convert an OMML element to a MathML element (or
             None for property/formatting elements that carry no content)."""
             tname = tag_name(elem)
-            if tname in _MATHML_SKIP_TAGS:
+            if tname in _OMML_PROPERTY_TAGS:
                 return None
 
             # Text element → mi (identifier) or mn (number)
@@ -341,6 +342,198 @@ def mathml_from_omml(omml_str: str) -> str:
 
     except Exception as e:
         print(f"Warning: OMML to MathML conversion failed: {e}")
+
+    return ""
+
+
+# Unicode symbols (Greek letters, operators, relations) mapped to their
+# standard LaTeX macros. Applied to non-prose OMML text runs so the emitted
+# .tex source is plain ASCII — pdflatex has no inputenc/fontenc setup, so a
+# literal "β" byte sequence in the source would fail to compile or render
+# wrong; "\beta" is what a human LaTeX author would actually type.
+_LATEX_SYMBOL_MAP = {
+    # Greek lowercase (+ micro sign, commonly used interchangeably with mu)
+    'α': r'\alpha', 'β': r'\beta', 'γ': r'\gamma', 'δ': r'\delta',
+    'ε': r'\epsilon', 'ζ': r'\zeta', 'η': r'\eta', 'θ': r'\theta',
+    'ι': r'\iota', 'κ': r'\kappa', 'λ': r'\lambda', 'μ': r'\mu', 'µ': r'\mu',
+    'ν': r'\nu', 'ξ': r'\xi', 'π': r'\pi', 'ρ': r'\rho', 'ς': r'\varsigma',
+    'σ': r'\sigma', 'τ': r'\tau', 'υ': r'\upsilon', 'φ': r'\phi',
+    'χ': r'\chi', 'ψ': r'\psi', 'ω': r'\omega',
+    # Greek uppercase (only the glyphs that differ from Latin letters)
+    'Γ': r'\Gamma', 'Δ': r'\Delta', 'Θ': r'\Theta', 'Λ': r'\Lambda',
+    'Ξ': r'\Xi', 'Π': r'\Pi', 'Σ': r'\Sigma', 'Υ': r'\Upsilon',
+    'Φ': r'\Phi', 'Ψ': r'\Psi', 'Ω': r'\Omega',
+    # Operators / relations
+    '×': r'\times', '÷': r'\div', '±': r'\pm', '∓': r'\mp',
+    '≤': r'\leq', '≥': r'\geq', '≠': r'\neq', '≈': r'\approx',
+    '≡': r'\equiv', '∝': r'\propto', '∞': r'\infty', '·': r'\cdot',
+    '→': r'\rightarrow', '←': r'\leftarrow', '↔': r'\leftrightarrow',
+    '⇒': r'\Rightarrow', '⇌': r'\rightleftharpoons',
+    '∑': r'\sum', '∏': r'\prod', '∫': r'\int', '∂': r'\partial',
+    '∇': r'\nabla', '√': r'\sqrt', '∈': r'\in', '∉': r'\notin',
+    '∀': r'\forall', '∃': r'\exists', '∅': r'\emptyset', '°': r'^\circ',
+    # OMML's invisible layout operators — no LaTeX equivalent, just drop them
+    '⁡': '', '⁢': '', '⁣': '', '⁤': '',
+}
+
+# Standard LaTeX "log-like" math operators (upright, correctly spaced) — a
+# bare OMML text run matching one of these exactly becomes \cos, \sin, etc.
+# instead of being left to render as italicized single letters.
+_LATEX_FUNC_NAMES = {
+    'cos', 'sin', 'tan', 'cot', 'sec', 'csc', 'log', 'ln', 'exp', 'lim',
+    'max', 'min', 'sup', 'inf', 'det', 'gcd', 'arg',
+    'cosh', 'sinh', 'tanh', 'coth',
+}
+
+# A run of 2+ Latin letters reads as a word/label (e.g. "Degradation
+# Efficiency", "Where") rather than a math variable — checked BEFORE any
+# symbol substitution, since substituted macros (e.g. "\beta") also contain
+# letter runs and would otherwise be misdetected as prose.
+_LATEX_WORD_RE = re.compile(r'[A-Za-z]{2,}')
+
+
+def _latex_symbols(text: str) -> str:
+    """Apply the Unicode→LaTeX macro table character by character."""
+    return ''.join(_LATEX_SYMBOL_MAP.get(c, c) for c in text)
+
+
+def _latex_escape_text(text: str) -> str:
+    """Escape LaTeX-special characters for use inside \\text{...}."""
+    text = text.replace('\xa0', ' ')  # non-breaking space → plain ASCII space
+    text = text.replace('\\', r'\textbackslash{}')  # must come first
+    for ch, esc in (
+        ('&', r'\&'), ('%', r'\%'), ('$', r'\$'), ('#', r'\#'),
+        ('_', r'\_'), ('{', r'\{'), ('}', r'\}'),
+        ('~', r'\textasciitilde{}'), ('^', r'\textasciicircum{}'),
+    ):
+        text = text.replace(ch, esc)
+    return text
+
+
+def omml_to_latex(omml_str: str) -> str:
+    """
+    Convert OMML (Office Math Markup Language) to a LaTeX math expression
+    (no surrounding $ / \\[ \\] — the caller wraps it in a math environment).
+
+    Walks the same OMML tree as mathml_from_omml, emitting LaTeX macros
+    instead of MathML elements: m:f → \\frac{num}{den}, m:sSub → base_{sub},
+    m:sSup → base^{sup}, m:rad → \\sqrt{...}, Greek letters/operators →
+    their LaTeX macros. This works from the structured tree rather than the
+    flattened Unicode text extraction, so fractions and scripts survive
+    intact instead of collapsing to a bare "/" or plain digit.
+    """
+    if not omml_str:
+        return ""
+
+    try:
+        omml = etree.fromstring(omml_str.encode('utf-8'))
+
+        def tag_name(elem):
+            return elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+
+        def join_children(elem):
+            """Convert an element's non-property children and join with a
+            space — the space is invisible in rendered math-mode spacing,
+            but prevents adjacent control-word macros from merging into an
+            undefined one (e.g. "\\theta" + "x" must not become "\\thetax")."""
+            parts = []
+            for child in elem:
+                if tag_name(child) in _OMML_PROPERTY_TAGS:
+                    continue
+                piece = convert(child)
+                if piece:
+                    parts.append(piece)
+            return ' '.join(parts)
+
+        def convert(elem):
+            tname = tag_name(elem)
+            if tname in _OMML_PROPERTY_TAGS:
+                return ""
+
+            if tname == 't':
+                raw = elem.text or ""
+                if not raw:
+                    return ""
+                stripped = raw.strip()
+                if stripped in _LATEX_FUNC_NAMES:
+                    return raw.replace(stripped, '\\' + stripped, 1)
+                if _LATEX_WORD_RE.search(raw):
+                    # Prose label — render upright via \text{} so LaTeX
+                    # doesn't italicize/space it like a run of variables.
+                    return r'\text{' + _latex_escape_text(raw) + '}'
+                # A math symbol, digit, or operator — safe to leave in math
+                # mode directly once Unicode symbols are mapped to macros.
+                return _latex_symbols(raw)
+
+            if tname in ('oMath', 'oMathPara', 'r', 'e', 'sub', 'sup', 'base'):
+                return join_children(elem)
+
+            if tname == 'f':
+                num = den = ""
+                for child in elem:
+                    ctag = tag_name(child)
+                    if ctag == 'num':
+                        num = join_children(child)
+                    elif ctag == 'den':
+                        den = join_children(child)
+                return f'\\frac{{{num}}}{{{den}}}'
+
+            if tname == 'sSub':
+                base = sub = ""
+                for child in elem:
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = join_children(child)
+                    elif ctag == 'sub':
+                        sub = join_children(child)
+                return f'{base}_{{{sub}}}'
+
+            if tname == 'sSup':
+                base = sup = ""
+                for child in elem:
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = join_children(child)
+                    elif ctag == 'sup':
+                        sup = join_children(child)
+                return f'{base}^{{{sup}}}'
+
+            if tname == 'sSubSup':
+                base = sub = sup = ""
+                for child in elem:
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = join_children(child)
+                    elif ctag == 'sub':
+                        sub = join_children(child)
+                    elif ctag == 'sup':
+                        sup = join_children(child)
+                return f'{base}_{{{sub}}}^{{{sup}}}'
+
+            if tname == 'rad':
+                base = ""
+                deg = None
+                for child in elem:
+                    ctag = tag_name(child)
+                    if ctag == 'e':
+                        base = join_children(child)
+                    elif ctag == 'deg' and len(child):
+                        deg = join_children(child)
+                return f'\\sqrt[{deg}]{{{base}}}' if deg else f'\\sqrt{{{base}}}'
+
+            if tname == 'd':
+                # Delimiter chars (begChr/endChr) live in dPr attributes, not
+                # text; assuming plain parentheses covers the common case.
+                # \left/\right auto-size to the enclosed content's height.
+                return f'\\left({join_children(elem)}\\right)'
+
+            # Default: join any unrecognised container's children
+            return join_children(elem)
+
+        return convert(omml).strip()
+
+    except Exception as e:
+        print(f"Warning: OMML to LaTeX conversion failed: {e}")
 
     return ""
 

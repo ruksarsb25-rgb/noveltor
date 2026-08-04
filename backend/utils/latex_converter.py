@@ -109,10 +109,20 @@ class LaTeXGenerator:
                     latex += f"{self.escape_latex(text)}\n\n"
 
             elif block_type == "equation":
-                eq_text = block.get("text", "")
-                if eq_text:
-                    latex_eq = equation_to_latex(eq_text)
-                    latex += f"\\[\n{latex_eq}\n\\]\n\n"
+                # Prefer real LaTeX math: either typed directly by the author
+                # ($...$ in the manuscript) or converted from the OMML tree
+                # (omml_to_latex, in equations.py) — both are valid LaTeX
+                # already. Only fall back to the lossy flattened-text
+                # reconstruction for older saved articles that predate the
+                # "latex" field (e.g. a draft resumed from localStorage).
+                block_latex = block.get("latex", "")
+                if block_latex:
+                    latex += f"\\[\n{block_latex}\n\\]\n\n"
+                else:
+                    eq_text = block.get("text", "")
+                    if eq_text:
+                        latex_eq = equation_to_latex(eq_text)
+                        latex += f"\\[\n{latex_eq}\n\\]\n\n"
 
             elif block_type == "table":
                 caption = block.get("caption", "")
@@ -182,6 +192,8 @@ class LaTeXGenerator:
     def generate(self) -> str:
         """Generate complete LaTeX document."""
         latex = r"""\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath}
 \usepackage{amssymb}

@@ -9,7 +9,7 @@ from docx.oxml.ns import qn as _qn
 from docx.text.hyperlink import Hyperlink
 from docx.text.run import Run
 from lxml import etree as _etree
-from utils.equations import extract_equation_text, mathml_from_omml
+from utils.equations import extract_equation_text, mathml_from_omml, omml_to_latex
 from utils.latex_to_mathml import detect_latex_formulas, latex_to_mathml
 
 # Translate Unicode superscript digits → ASCII digits
@@ -378,6 +378,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 omml   = omml_list[0]
                 mathml = mathml_from_omml(omml) if omml else ""
                 eq_text = " ".join(extract_equation_text(o) for o in omml_list).strip()
+                eq_latex = " ".join(omml_to_latex(o) for o in omml_list).strip()
 
                 if omml or data_uri:
                     target.append({
@@ -385,6 +386,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                         "omml": omml if omml else None,
                         "mathml": mathml if mathml else None,
                         "text": eq_text if eq_text else None,  # Extracted text with proper subscripts
+                        "latex": eq_latex if eq_latex else None,  # Real LaTeX math (\frac, \beta, …) for /export/pdf-latex
                         "data_uri": data_uri if data_uri else None
                     })
             continue
