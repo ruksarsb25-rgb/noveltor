@@ -51,6 +51,14 @@ _SUP_MAP = {
 _SUB_RUN_RE = re.compile('[' + ''.join(_SUB_MAP) + ']+')
 _SUP_RUN_RE = re.compile('[' + ''.join(_SUP_MAP) + ']+')
 
+# Manuscript headings/table captions already carry the author's own number
+# (e.g. "3.2 SEM analysis", "Table 2. Crystallite size..."), but LaTeX's
+# \section{}/\subsection{}/\caption{} also auto-number — left alone, both
+# fire and the number prints twice ("3.2 3.2 SEM analysis", "Table 2: Table
+# 2"). Strip the author's leading number so only LaTeX's own numbering shows.
+_LEADING_HEADING_NUM_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+')
+_LEADING_TABLE_LABEL_RE = re.compile(r'^table\s+\d+\s*[:.]?\s*', re.IGNORECASE)
+
 
 _LATIN_LETTER_NAME_RE = re.compile(r'LATIN (SMALL|CAPITAL) LETTER ([A-Z]+)')
 
@@ -193,19 +201,47 @@ class LaTeXGenerator:
         return text
 
     def format_authors(self) -> str:
-        """Format author list with affiliations."""
+        """
+        Build \\author[]{}/\\affil[]{} commands (the authblk package) —
+        each author gets a numbered superscript marker linking to their
+        affiliation, and the corresponding author's email is attached as a
+        \\thanks{} footnote. Returns the complete set of commands, not
+        wrapped in an outer \\author{} — generate() inserts this as-is.
+        """
         if not self.authors:
             return ""
 
-        author_list = []
+        # Number each unique affiliation in first-seen order
+        affil_numbers: Dict[str, int] = {}
+        affil_order: List[str] = []
         for author in self.authors:
-            first_name = author.get('first_name', '').strip()
-            last_name = author.get('last_name', '').strip()
-            name = f"{first_name} {last_name}".strip()
-            if name:
-                author_list.append(self.escape_latex(name))
+            aff = (author.get('affiliation') or '').strip()
+            if aff and aff not in affil_numbers:
+                affil_numbers[aff] = len(affil_order) + 1
+                affil_order.append(aff)
 
-        return ' \\and '.join(author_list) if author_list else ""
+        lines = []
+        for author in self.authors:
+            first_name = (author.get('first_name') or '').strip()
+            last_name = (author.get('last_name') or '').strip()
+            name = f"{first_name} {last_name}".strip()
+            if not name:
+                continue
+
+            aff = (author.get('affiliation') or '').strip()
+            marker = f"[{affil_numbers[aff]}]" if aff in affil_numbers else ""
+
+            thanks = ""
+            if author.get('corresponding') and author.get('email'):
+                email = self.escape_latex(author['email'])
+                thanks = f"\\thanks{{Corresponding author: {email}}}"
+
+            lines.append(f"\\author{marker}{{{self.escape_latex(name)}{thanks}}}")
+
+        for aff in affil_order:
+            lines.append(f"\\affil[{affil_numbers[aff]}]{{{self.escape_latex(aff)}}}")
+
+        return "\n".join(lines)
 
     def format_section(self, section: Dict[str, Any], depth: int = 1) -> str:
         """Format a section with content and subsections."""
@@ -213,6 +249,9 @@ class LaTeXGenerator:
 
         heading = section.get("heading", "").strip()
         if heading:
+            # Strip the manuscript's own leading number ("3.2 SEM analysis"
+            # -> "SEM analysis") — \section/\subsection add their own.
+            heading = _LEADING_HEADING_NUM_RE.sub('', heading)
             if depth == 1:
                 latex += f"\\section{{{self.escape_latex(heading)}}}\n\n"
             elif depth == 2:
@@ -275,9 +314,16 @@ class LaTeXGenerator:
 
         latex = "\\begin{table}[!htbp]\n\\centering\n"
         if caption:
-            latex += f"\\caption{{{self.escape_latex(caption)}}}\n"
+            # \caption{} already prints its own "Table N:" prefix — strip
+            # the manuscript's own "Table N" label so it isn't doubled.
+            caption_text = _LEADING_TABLE_LABEL_RE.sub('', caption).strip()
+            if caption_text:
+                latex += f"\\caption{{{self.escape_latex(caption_text)}}}\n"
 
-        latex += f"\\begin{{tabular}}{{{'|'.join(['l'] * num_cols)}}}\n\\hline\n"
+        # tabularx's X columns share the available \textwidth and wrap cell
+        # text to fit, instead of plain "l" columns running off the page
+        # edge for wide tables.
+        latex += f"\\begin{{tabularx}}{{\\textwidth}}{{|*{{{num_cols}}}{{X|}}}}\n\\hline\n"
 
         # Headers
         if headers:
@@ -289,7 +335,7 @@ class LaTeXGenerator:
             latex += " & ".join(self.escape_latex(str(cell)) for cell in row)
             latex += " \\\\\n"
 
-        latex += "\\hline\n\\end{tabular}\n\\end{table}\n\n"
+        latex += "\\hline\n\\end{tabularx}\n\\end{table}\n\n"
         return latex
 
     def format_references(self) -> str:
@@ -322,6 +368,8 @@ class LaTeXGenerator:
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{authblk}
 
 \raggedbottom
 
@@ -330,9 +378,10 @@ class LaTeXGenerator:
         # Title
         latex += f"\\title{{{self.escape_latex(self.title)}}}\n"
 
-        # Authors
+        # Authors — format_authors() returns complete \author[]{}/\affil[]{}
+        # commands (authblk), not a plain name list to wrap in \author{}.
         if self.authors:
-            latex += f"\\author{{{self.format_authors()}}}\n"
+            latex += f"{self.format_authors()}\n"
 
         # Date
         latex += "\\date{}\n\n"
