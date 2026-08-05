@@ -15,6 +15,36 @@ ARTICLE_TYPE_MAP = {
     "Conference Report":       "conference-report",
 }
 
+# Manuscripts often carry the same figure/table caption twice: once in the
+# block's own "caption" field (emitted as a proper <fig>/<table-wrap>
+# <caption>), and once left behind as an ordinary paragraph right after the
+# image/table ("Fig. 2. SEM micrographs..." as plain body text). These
+# detect and strip that duplicate paragraph — same logic as the LaTeX PDF
+# exporter's fix (latex_converter.py), duplicated locally rather than
+# imported since generator.py is the more foundational module.
+_LEADING_FIG_LABEL_RE = re.compile(r'^fig(?:ure)?\.?\s*\d+\s*[:.]?\s*', re.IGNORECASE)
+_LEADING_TABLE_LABEL_RE = re.compile(r'^table\s+\d+\s*[:.]?\s*', re.IGNORECASE)
+_CAPTION_NORM_TAG_RE = re.compile(r'</?(?:sub|sup|strong|em)>', re.IGNORECASE)
+_CAPTION_NORM_NONALNUM_RE = re.compile(r'[^a-z0-9]+')
+_SUB_SUP_DIGIT_MAP = {
+    '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
+    '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
+    '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+    '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+}
+
+
+def _normalize_caption_for_match(text: str) -> str:
+    """Collapse a caption to lowercase alphanumerics only, with <sub>/<sup>/
+    <strong>/<em> tags stripped and Unicode sub/superscript digits folded to
+    plain ASCII — so the same caption written two slightly different ways
+    (e.g. "SrO2" vs "SrO<sub>2</sub>" vs "SrO₂") still compares equal. Used
+    only to detect a duplicate caption paragraph, never emitted as-is."""
+    s = _CAPTION_NORM_TAG_RE.sub('', text)
+    for uni, ascii_ch in _SUB_SUP_DIGIT_MAP.items():
+        s = s.replace(uni, ascii_ch)
+    return _CAPTION_NORM_NONALNUM_RE.sub('', s.lower())
+
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -315,20 +345,44 @@ def _append_content_blocks(parent: Element, sec: dict, data: dict,
     """Write paragraphs, figures, equations, and tables from content-array or legacy body string."""
     content = sec.get("content")
     if content:
+        # Tracks the normalized caption of the most recently emitted
+        # figure/table, so a duplicate "Fig. N."/"Table N." restatement
+        # paragraph right after it can be skipped — see the module-level
+        # comment on _LEADING_FIG_LABEL_RE for why this exists.
+        prev_caption_norm = None
         for block in content:
             btype = block.get("type")
             if btype == "paragraph":
                 text = (block.get("text") or "").strip()
                 if text:
+                    delabeled = _LEADING_FIG_LABEL_RE.sub(
+                        '', _LEADING_TABLE_LABEL_RE.sub('', text)
+                    ).strip()
+                    norm = _normalize_caption_for_match(delabeled)
+                    if prev_caption_norm and len(norm) > 8 and norm == prev_caption_norm:
+                        prev_caption_norm = None
+                        continue
                     _mixed(SubElement(parent, "p"), text)
+                prev_caption_norm = None
             elif btype == "figure":
                 fig_counter[0] += 1
                 _inline_fig(parent, block, data, fig_counter[0])
+                caption = block.get("caption", "")
+                prev_caption_norm = _normalize_caption_for_match(caption) if caption else None
             elif btype == "equation":
                 eq_counter[0] += 1
                 _inline_eq(parent, block, data, eq_counter[0])
+                prev_caption_norm = None
             elif btype == "table":
                 _inline_table(parent, block)
+                # Mirror _inline_table's own caption != label guard, so we
+                # only track a caption here if it was actually emitted there.
+                label = block.get("label", "")
+                caption = block.get("caption", label)
+                prev_caption_norm = (
+                    _normalize_caption_for_match(caption)
+                    if caption and caption != label else None
+                )
     elif sec.get("body"):
         for para_text in _split_paragraphs(sec["body"]):
             _mixed(SubElement(parent, "p"), para_text)
