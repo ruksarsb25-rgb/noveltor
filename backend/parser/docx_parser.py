@@ -40,6 +40,21 @@ _DOI_RE = re.compile(r'(?:doi:\s*|https?://doi\.org/)?([0-9]{2}\.[0-9]{4}/[^\s,;
 # Matches a DOI inside a hyperlink target, e.g. https://doi.org/10.1007/978-981-96-6795-6_18
 _DOI_URL_RE = re.compile(r'doi\.org/(10\.\d{4,}/\S+)', re.IGNORECASE)
 
+# Article-type label line ("Research paper", "Review Article", ...) that
+# many journal templates place on its own line directly above the real
+# title. Without this, the pre_title fallback rule (below, "still no title
+# after N paragraphs") mistakes the label itself for the title, and the
+# real title — appearing right after — gets swallowed into author-name
+# parsing instead (phase has already moved past pre_title by then).
+_ARTICLE_TYPE_LABELS = {
+    'research paper', 'research article', 'review article', 'review paper',
+    'original article', 'original research', 'original research article',
+    'short communication', 'case report', 'case study', 'technical note',
+    'mini review', 'mini-review', 'letter', 'communication', 'perspective',
+    'editorial', 'commentary', 'brief report', 'rapid communication',
+    'conference paper', 'conference proceeding',
+}
+
 _W_TBL     = _qn('w:tbl')
 _W_P       = _qn('w:p')
 _W_R       = _qn('w:r')
@@ -482,6 +497,11 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
 
         # ── pre_title ────────────────────────────────────────────────────────
         if phase == "pre_title":
+            if para_idx <= 3 and text.strip().lower().rstrip(':') in _ARTICLE_TYPE_LABELS:
+                # "Research paper" / "Review Article" / etc. on its own line
+                # above the real title — skip it, stay in pre_title, keep
+                # looking for the actual title in the following paragraphs.
+                continue
             if heading_explicit == "h1" or (is_bold and font_size and font_size >= 14):
                 state["title"] = _para_text_with_fmt(p)
                 phase = "authors"
