@@ -69,6 +69,14 @@ _SUP_RUN_RE = re.compile('[' + ''.join(_SUP_MAP) + ']+')
 # 2"). Strip the author's leading number so only LaTeX's own numbering shows.
 _LEADING_HEADING_NUM_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+')
 _LEADING_TABLE_LABEL_RE = re.compile(r'^table\s+\d+\s*[:.]?\s*', re.IGNORECASE)
+_LEADING_FIG_LABEL_RE = re.compile(r'^fig(?:ure)?\.?\s*\d+\s*[:.]?\s*', re.IGNORECASE)
+
+# Tags/marks that can differ cosmetically between the same caption text
+# appearing twice (once as the figure/table block's own caption, once as a
+# leftover manuscript paragraph right after the image/table) without it
+# being a different caption — stripped out before the duplicate check below.
+_CAPTION_NORM_TAG_RE = re.compile(r'</?(?:sub|sup|strong|em)>', re.IGNORECASE)
+_CAPTION_NORM_NONALNUM_RE = re.compile(r'[^a-z0-9]+')
 
 
 _LATIN_LETTER_NAME_RE = re.compile(r'LATIN (SMALL|CAPITAL) LETTER ([A-Z]+)')
@@ -100,6 +108,19 @@ def _ascii_fallback(ch: str) -> str:
         letter = m.group(2)
         return letter if m.group(1) == 'CAPITAL' else letter.lower()
     return ''
+
+
+def _normalize_caption_for_match(text: str) -> str:
+    """Collapse a caption down to just its lowercase alphanumerics, with
+    <sub>/<sup>/<strong>/<em> tags stripped and Unicode sub/superscript
+    digits folded to plain ASCII — so the same caption text written two
+    slightly different ways (e.g. "SrO2" vs "SrO<sub>2</sub>" vs "SrO₂")
+    still compares equal. Used only to detect a duplicate caption paragraph,
+    never for anything that ends up in the actual LaTeX output."""
+    s = _CAPTION_NORM_TAG_RE.sub('', text)
+    for uni, ascii_ch in {**_SUB_MAP, **_SUP_MAP}.items():
+        s = s.replace(uni, ascii_ch)
+    return _CAPTION_NORM_NONALNUM_RE.sub('', s.lower())
 
 
 def equation_to_latex(equation_text: str) -> str:
@@ -365,13 +386,28 @@ class LaTeXGenerator:
 
         # Process content blocks
         content = section.get("content", [])
+        # Tracks the normalized caption of the most recently emitted
+        # figure/table, so a manuscript paragraph that just restates that
+        # same caption ("Fig. 2. SEM micrographs..." right after a figure
+        # whose own caption is "SEM micrographs...") can be skipped instead
+        # of printed a second time — \caption{} already showed it once,
+        # auto-numbered.
+        prev_caption_norm = None
         for block in content:
             block_type = block.get("type")
 
             if block_type == "paragraph":
                 text = block.get("text", "").strip()
                 if text:
+                    delabeled = _LEADING_FIG_LABEL_RE.sub(
+                        '', _LEADING_TABLE_LABEL_RE.sub('', text)
+                    ).strip()
+                    norm = _normalize_caption_for_match(delabeled)
+                    if prev_caption_norm and len(norm) > 8 and norm == prev_caption_norm:
+                        prev_caption_norm = None
+                        continue
                     latex += f"{self.escape_latex(text)}\n\n"
+                prev_caption_norm = None
 
             elif block_type == "equation":
                 # Prefer real LaTeX math: either typed directly by the author
@@ -388,10 +424,13 @@ class LaTeXGenerator:
                     if eq_text:
                         latex_eq = equation_to_latex(eq_text)
                         latex += f"\\[\n{latex_eq}\n\\]\n\n"
+                prev_caption_norm = None
 
             elif block_type == "table":
                 caption = block.get("caption", "")
                 latex += self.format_table(block, caption)
+                stripped_caption = _LEADING_TABLE_LABEL_RE.sub('', caption).strip() if caption else ""
+                prev_caption_norm = _normalize_caption_for_match(stripped_caption) or None
 
             elif block_type == "figure":
                 caption = block.get("caption", "")
@@ -409,6 +448,7 @@ class LaTeXGenerator:
                     if caption:
                         latex += f"\\caption{{{self.escape_latex(caption)}}}\n"
                     latex += "\\end{figure}\n\n"
+                prev_caption_norm = _normalize_caption_for_match(caption) if caption else None
 
         # Process subsections
         subsections = section.get("subsections", [])
