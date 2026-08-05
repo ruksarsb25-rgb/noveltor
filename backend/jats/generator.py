@@ -2,9 +2,21 @@
 JATS XML generator — NISO Z39.96, Publishing DTD v1.3.
 Structure matched to the Data.xml reference used by the NFP website renderer.
 """
-from xml.etree.ElementTree import Element, SubElement, tostring, fromstring
+from xml.etree.ElementTree import Element, SubElement, tostring, fromstring, register_namespace
 from xml.dom import minidom
 import re
+
+# Without this, ElementTree has no idea the root's xmlns:mml="..." attribute
+# (just a plain string as far as it's concerned) is meant to apply to the
+# MathML elements appended in _inline_eq() — those get built with their own
+# real namespace declaration (mathml_from_omml() in equations.py), and on
+# serialization ElementTree auto-generates a throwaway "ns0:" prefix for any
+# namespace URI it hasn't been told a prefix for via register_namespace().
+# The result is well-formed but non-conventional XML — <ns0:math> instead of
+# the <mml:math> JATS expects — which is a very plausible reason a
+# JATS-aware frontend renderer fails to recognize the formula as MathML and
+# silently falls back to the <graphic> image instead.
+register_namespace('mml', 'http://www.w3.org/1998/Math/MathML')
 
 
 ARTICLE_TYPE_MAP = {
@@ -59,7 +71,10 @@ def generate_jats(data: dict) -> str:
     root.set("xml:lang", "en")
     root.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
     root.set("xmlns:ali",   "http://www.niso.org/schemas/ali/1.0/")
-    root.set("xmlns:mml",   "http://www.w3.org/1998/Math/MathML")
+    # xmlns:mml is no longer set manually — register_namespace() above makes
+    # the serializer insert it itself, exactly once, only when the document
+    # actually contains MathML content. Setting it here too would duplicate
+    # the attribute on <article> and produce invalid XML.
     root.set("article-type", article_type)
     root.set("dtd-version",  "1.3")
 
