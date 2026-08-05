@@ -294,7 +294,7 @@ class LaTeXGenerator:
 
         parts = []
 
-        # Badges
+        # Badges — left, above the centered title block below
         parts.append(
             "\\noindent"
             f"\\colorbox{{nfpbadgeblue}}{{\\textcolor{{white}}{{\\small\\textbf{{ {self.escape_latex(type_label)} }}}}}}"
@@ -302,6 +302,11 @@ class LaTeXGenerator:
             "\\colorbox{nfpbadgegreen}{\\textcolor{white}{\\small\\textbf{ OPEN ACCESS }}}"
             "\n\n"
         )
+
+        # Title through DOI are centered as one block, matching standard
+        # academic-paper PDF convention (title/authors/affiliations centered
+        # on the page, unlike the left-aligned web-article layout).
+        parts.append("\\begin{center}\n")
 
         # Title
         parts.append(f"{{\\LARGE\\bfseries\\color{{nfpnavy}} {self.escape_latex(self.title)}\\par}}\n\n")
@@ -364,6 +369,7 @@ class LaTeXGenerator:
         if doi_val:
             parts.append(f"{{\\small \\textbf{{DOI:}} \\url{{https://doi.org/{doi_val}}}}}\\par\n\n")
 
+        parts.append("\\end{center}\n\n")
         parts.append("\\vspace{4pt}\\noindent{\\color{nfpnavy}\\rule{\\linewidth}{1.2pt}}\\vspace{8pt}\n\n")
 
         return "".join(parts)
@@ -438,7 +444,10 @@ class LaTeXGenerator:
                 data_uri = block.get("data_uri", "")
                 img_path = self._write_image(data_uri, "fig")
                 if img_path or caption:
-                    latex += "\\begin{figure}[!htbp]\n\\centering\n"
+                    # [H]: same reasoning as format_table()'s [H] — pin the
+                    # figure exactly where declared instead of it floating
+                    # and leaving a gap on the page it "should" be on.
+                    latex += "\\begin{figure}[H]\n\\centering\n"
                     if img_path:
                         latex += f"\\includegraphics[width=0.85\\textwidth]{{{img_path}}}\n"
                     else:
@@ -468,22 +477,39 @@ class LaTeXGenerator:
         # Estimate columns
         num_cols = len(headers) if headers else (len(rows[0]) if rows else 1)
 
-        latex = "\\begin{table}[!htbp]\n\\centering\n"
-        if caption:
-            # \caption{} already prints its own "Table N:" prefix — strip
-            # the manuscript's own "Table N" label so it isn't doubled.
-            caption_text = _LEADING_TABLE_LABEL_RE.sub('', caption).strip()
-            if caption_text:
-                latex += f"\\caption{{{self.escape_latex(caption_text)}}}\n"
+        # [H] (float package) pins the table exactly where it's declared in
+        # the source instead of letting LaTeX's float-placement algorithm
+        # defer it to fit — which was leaving a large gap of unfilled space
+        # on the page where the table "should" have been while it floated
+        # down to the next page instead.
+        latex = "\\begin{table}[H]\n\\centering\n"
+
+        # \caption{} already prints its own "Table N:" prefix, so strip the
+        # manuscript's own "Table N" label from a real description to avoid
+        # doubling it. If there's no better text (the caption field is just
+        # the bare label, or empty), fall back to the label itself — every
+        # table gets *some* caption rather than silently having none.
+        caption_text = _LEADING_TABLE_LABEL_RE.sub('', caption).strip() if caption else ""
+        if not caption_text:
+            caption_text = (table.get("label") or "").strip()
+        if caption_text:
+            latex += f"\\caption{{{self.escape_latex(caption_text)}}}\n"
 
         # tabularx's X columns share the available \textwidth and wrap cell
         # text to fit, instead of plain "l" columns running off the page
-        # edge for wide tables.
-        latex += f"\\begin{{tabularx}}{{\\textwidth}}{{|*{{{num_cols}}}{{X|}}}}\n\\hline\n"
+        # edge for wide tables. >{\centering\arraybackslash} centers cell
+        # content (headers and body) instead of the default ragged-left.
+        latex += (
+            f"\\begin{{tabularx}}{{\\textwidth}}"
+            f"{{|*{{{num_cols}}}{{>{{\\centering\\arraybackslash}}X|}}}}\n\\hline\n"
+        )
 
-        # Headers
+        # Headers — bold, white text on the brand navy background
         if headers:
-            latex += " & ".join(self.escape_latex(str(h)) for h in headers)
+            latex += "\\rowcolor{nfpnavy}\n"
+            latex += " & ".join(
+                f"\\textcolor{{white}}{{\\textbf{{{self.escape_latex(str(h))}}}}}" for h in headers
+            )
             latex += " \\\\\n\\hline\n"
 
         # Rows
@@ -528,14 +554,21 @@ class LaTeXGenerator:
         if not (logo_path or self.journal_name or brand_path):
             return ""
 
-        left = f"\\includegraphics[width=1.3cm]{{{logo_path}}}" if logo_path else ""
+        # Both logos constrained to the same height (with a width cap and
+        # keepaspectratio so neither can blow out the header) so they read
+        # as a matched pair regardless of their original image proportions —
+        # a journal cover thumbnail (portrait) and a wordmark logo
+        # (landscape) previously ended up at very different visual sizes
+        # when each was constrained by a different fixed width instead.
+        logo_opts = "height=1.4cm,width=2.4cm,keepaspectratio"
+        left = f"\\includegraphics[{logo_opts}]{{{logo_path}}}" if logo_path else ""
         center = ""
         if self.journal_name:
             center = (
                 "{\\small\\color{gray!70!black} From the journal:}\\\\[2pt]"
                 f"{{\\bfseries\\large\\color{{nfpnavy}} {self.escape_latex(self.journal_name)}}}"
             )
-        right = f"\\includegraphics[width=2.0cm]{{{brand_path}}}" if brand_path else ""
+        right = f"\\includegraphics[{logo_opts}]{{{brand_path}}}" if brand_path else ""
 
         return (
             "\\noindent\n"
@@ -556,9 +589,16 @@ class LaTeXGenerator:
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{booktabs}
+% [table] pulls in colortbl for \rowcolor{} — loaded before array/tabularx,
+% the recommended order to avoid the two patching tabular internals in
+% conflicting ways.
+\usepackage[table]{xcolor}
 \usepackage{tabularx}
 \usepackage{array}
-\usepackage{xcolor}
+% Float package's [H] placement pins a table/figure exactly where declared
+% instead of LaTeX's normal float algorithm deferring it to fit — that
+% deferral was leaving a large gap where the table "should" have been.
+\usepackage{float}
 
 % Brand colors, matching the WeasyPrint template's palette
 \definecolor{nfpnavy}{HTML}{0F3557}
