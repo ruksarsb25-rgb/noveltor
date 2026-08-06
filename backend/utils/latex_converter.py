@@ -30,6 +30,40 @@ _SUP_TAG_RE = re.compile(r'<sup>(.*?)</sup>', re.IGNORECASE | re.DOTALL)
 _STRONG_TAG_RE = re.compile(r'<strong>(.*?)</strong>', re.IGNORECASE | re.DOTALL)
 _EM_TAG_RE = re.compile(r'<em>(.*?)</em>', re.IGNORECASE | re.DOTALL)
 
+# Bare URLs (e.g. a DOI the parser appended as plain text after a hyperlink,
+# or a URL an author pasted directly) — same pattern as the WeasyPrint
+# template's _linkify(), so both PDFs turn the same text into clickable
+# links. Split out and wrapped in \url{} *before* general character
+# escaping since \url{} is verbatim and must receive the raw URL text.
+_URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
+
+# Bracket citations — "[1]", "[1, 2]", "[1-3]" — same pattern as the
+# WeasyPrint template's _citify(). Matched on raw text (digits/commas/
+# hyphens/brackets need no LaTeX escaping) and replaced with a <cite>
+# marker that, like <sub>/<sup>, survives step-1 character escaping
+# untouched and is expanded to real \hyperref links in step 2.
+_CITE_RE = re.compile(r'\[([\d,\s–—-]+)\]')
+_CITE_TAG_RE = re.compile(r'<cite>([\d,]+)</cite>')
+
+
+def _citify_marker(text: str) -> str:
+    """Replace bracket citations with a <cite> marker carrying the expanded
+    (range-resolved) list of reference numbers, e.g. "[1-3]" -> "<cite>1,2,3</cite>"."""
+    def replace_bracket(m):
+        inner = m.group(1)
+        nums = []
+        for part in inner.split(','):
+            part = part.strip()
+            range_match = re.match(r'^(\d+)\s*[–—-]\s*(\d+)$', part)
+            if range_match:
+                nums.extend(range(int(range_match.group(1)), int(range_match.group(2)) + 1))
+            elif re.match(r'^\d+$', part):
+                nums.append(int(part))
+        if not nums:
+            return m.group(0)
+        return '<cite>' + ','.join(str(n) for n in nums) + '</cite>'
+    return _CITE_RE.sub(replace_bracket, text)
+
 # inputenc's utf8 table reliably covers Latin-1 Supplement (À-ÿ) and, in
 # modern TeX Live, Latin Extended-A (Ā-ſ, e.g. ă, ş, ț) too — confirmed
 # empirically: a real reference list with ă/ş/ü/í/ó in author names compiled
@@ -212,11 +246,36 @@ class LaTeXGenerator:
         if not text:
             return ""
         text = str(text)
+
+        # 0. Bare URLs must be pulled out and wrapped in \url{} (verbatim)
+        #    *before* anything below touches them — general escaping would
+        #    both mangle the URL and make it unclickable. Non-URL segments
+        #    recurse back through this same method for normal processing;
+        #    recursion terminates because split-off segments never contain
+        #    another URL match.
+        url_parts = _URL_RE.split(text)
+        if len(url_parts) > 1:
+            out = []
+            for i, part in enumerate(url_parts):
+                if i % 2 == 1:  # captured URL group
+                    clean = part.rstrip('.,;)')
+                    tail = part[len(clean):]
+                    out.append(f'\\url{{{clean}}}')
+                    if tail:
+                        out.append(self.escape_latex(tail))
+                else:
+                    out.append(self.escape_latex(part))
+            return ''.join(out)
+
         text = text.replace('\xa0', ' ')  # non-breaking space
         # Some authors paste/type styled Unicode math letters (e.g. "𝑘𝑡")
         # directly into prose instead of using Word's Equation Editor —
         # normalize to plain ASCII before anything else touches it.
         text = _normalize_math_alphanumerics(text)
+        # Bracket citations ("[1]", "[1-3]") -> <cite> markers, expanded to
+        # \hyperref links in step 2 below, linking to \label{cite:N} anchors
+        # placed on each \bibitem by format_references().
+        text = _citify_marker(text)
 
         # 1. Escape LaTeX-reserved characters first, on the raw text. This
         #    never touches < or >, so the HTML tags step 2 looks for survive
@@ -241,6 +300,10 @@ class LaTeXGenerator:
         text = _SUP_TAG_RE.sub(lambda m: '$^{' + m.group(1) + '}$', text)
         text = _STRONG_TAG_RE.sub(lambda m: r'\textbf{' + m.group(1) + '}', text)
         text = _EM_TAG_RE.sub(lambda m: r'\textit{' + m.group(1) + '}', text)
+        text = _CITE_TAG_RE.sub(
+            lambda m: '[' + ','.join(f'\\hyperref[cite:{n}]{{{n}}}' for n in m.group(1).split(',')) + ']',
+            text,
+        )
 
         # 3. Unicode subscript/superscript digits (e.g. "BaAl₂O₄") → real
         #    LaTeX subscript/superscript math, the standard way chemical
@@ -542,7 +605,10 @@ class LaTeXGenerator:
                 text = str(ref)
 
             if text:
-                latex += f"\\bibitem{{{i}}} {self.escape_latex(text)}\n\n"
+                # \label{cite:N} gives in-text "[N]" citations (turned into
+                # \hyperref[cite:N]{...} links by escape_latex's citation
+                # handling) something to jump to.
+                latex += f"\\bibitem{{{i}}}\\label{{cite:{i}}} {self.escape_latex(text)}\n\n"
 
         latex += "\\end{thebibliography}\n"
         return latex
@@ -622,6 +688,11 @@ class LaTeXGenerator:
 \definecolor{nfpnavy}{HTML}{0F3557}
 \definecolor{nfpbadgeblue}{HTML}{2C6FBB}
 \definecolor{nfpbadgegreen}{HTML}{2E9E5B}
+
+% Colored text instead of hyperref's default boxed-border links, navy to
+% match the WeasyPrint template's link color; no boxes in the printed/PDF
+% output either way (pdfborder=0), just the color as the visual cue.
+\hypersetup{colorlinks=true, linkcolor=nfpnavy, citecolor=nfpnavy, urlcolor=nfpnavy, pdfborder={0 0 0}}
 
 \raggedbottom
 % A little breathing room between paragraphs — spacing only, the default
