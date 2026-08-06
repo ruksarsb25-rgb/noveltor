@@ -48,6 +48,19 @@ def _extract_latex_error(log: str, latex_source: str = "") -> str:
     return '\n'.join(lines[-25:])
 
 
+def _run_pdflatex(tex_file: Path, tmpdir: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "pdflatex",
+            "-interaction=nonstopmode",
+            "-output-directory", str(tmpdir),
+            str(tex_file)
+        ],
+        capture_output=True,
+        timeout=60
+    )
+
+
 def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
     """
     Generate a professional PDF from article data using LaTeX.
@@ -72,22 +85,32 @@ def generate_pdf_from_latex(article: Dict[str, Any]) -> bytes:
 
         # Run pdflatex
         try:
-            result = subprocess.run(
-                [
-                    "pdflatex",
-                    "-interaction=nonstopmode",
-                    "-output-directory", str(tmpdir),
-                    str(tex_file)
-                ],
-                capture_output=True,
-                timeout=60
-            )
+            result = _run_pdflatex(tex_file, tmpdir)
 
             if result.returncode != 0:
                 full_log = result.stdout.decode('utf-8', errors='ignore')
                 summary = _extract_latex_error(full_log, latex_source)
                 raise Exception(
                     f"LaTeX compilation failed:\n{summary}\n\n"
+                    f"--- full log ---\n{full_log}"
+                )
+
+            # Second pass: \label writes each cross-reference target (e.g.
+            # a bibliography entry's \label{cite:N}) to the .aux file, which
+            # is only read back in on a *subsequent* run — a single pass
+            # can leave in-text \hyperref[cite:N]{...} citation links
+            # pointing nowhere even though they're still typeset (and
+            # colored) normally, so the PDF looks right but the links don't
+            # navigate. Standard practice for any LaTeX document with
+            # cross-references; cheap relative to the first pass since
+            # pdflatex reuses its format cache.
+            result = _run_pdflatex(tex_file, tmpdir)
+
+            if result.returncode != 0:
+                full_log = result.stdout.decode('utf-8', errors='ignore')
+                summary = _extract_latex_error(full_log, latex_source)
+                raise Exception(
+                    f"LaTeX compilation failed on second pass:\n{summary}\n\n"
                     f"--- full log ---\n{full_log}"
                 )
 
