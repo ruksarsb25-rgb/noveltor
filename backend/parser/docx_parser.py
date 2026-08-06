@@ -138,6 +138,11 @@ _VML_NS     = "{urn:schemas-microsoft-com:vml}"
 _O_NS       = "{urn:schemas-microsoft-com:office:office}"
 # OMML namespace for Word equations
 _MATH_NS    = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+# Word "Group" shapes (wpg:wgp/wpg:grpSp) — used when an author selects
+# several pictures and groups them into one object, e.g. a data table
+# image overlaid on a chart image to build one composite figure panel.
+_WPG_NS     = "{http://schemas.microsoft.com/office/word/2010/wordprocessingGroup}"
+_PIC_NS     = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
 
 # Figure label: Fig/Figure, optional dot, then space/hyphen/nothing, optional parens around number
 _FIG_CAPTION_RE    = re.compile(r'^fig(?:ure)?\.?[\s\-]?\s*\(?\d', re.IGNORECASE)
@@ -819,17 +824,25 @@ _WEASYPRINT_OK_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif",
                         "image/svg+xml", "image/webp", "image/bmp"}
 
 
-def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
-    """Return a base64 data URI, converting WMF/EMF to PNG via LibreOffice or Pillow."""
-    import base64 as _b64
+def _blob_to_pil_image(blob: bytes, content_type: str):
+    """Decode an image blob to a PIL Image, converting WMF/EMF to a raster
+    via LibreOffice (falling back to Pillow directly for anything else, or
+    if LibreOffice isn't available). Returns None on failure.
+
+    Used both by _blob_to_data_uri() (single-image fast path) and by
+    _blobs_to_data_uri() (which needs real Image objects to composite
+    multiple sub-panel images side-by-side)."""
+    from PIL import Image
+    import io
     ct = (content_type or "").lower()
     if ct in _WEASYPRINT_OK_TYPES:
-        b64 = _b64.b64encode(blob).decode()
-        return f"data:{content_type};base64,{b64}"
+        try:
+            return Image.open(io.BytesIO(blob)).convert("RGB")
+        except Exception:
+            return None
     # Use LibreOffice headless for EMF/WMF (most reliable cross-platform renderer)
     try:
         import subprocess, tempfile, os, glob, shutil
-        from PIL import Image
         suffix = ".emf" if "emf" in ct else ".wmf"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as src:
             src.write(blob)
@@ -860,12 +873,8 @@ def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
                     img = background
                 else:
                     img = img.convert("RGB")
-                img = _smart_crop(img)
-                import io
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                b64 = _b64.b64encode(buf.getvalue()).decode()
-                return f"data:image/png;base64,{b64}"
+                img.load()  # fully read pixel data before the temp dir is removed
+                return _smart_crop(img)
         finally:
             os.unlink(src_path)
             shutil.rmtree(out_dir, ignore_errors=True)
@@ -873,53 +882,317 @@ def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
         pass
     # Pillow fallback (works for some formats on Windows)
     try:
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(blob))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        b64 = _b64.b64encode(buf.getvalue()).decode()
-        return f"data:image/png;base64,{b64}"
+        return Image.open(io.BytesIO(blob)).convert("RGB")
     except Exception:
+        return None
+
+
+def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
+    """Return a base64 data URI, converting WMF/EMF to PNG via LibreOffice or Pillow."""
+    import base64 as _b64
+    ct = (content_type or "").lower()
+    if ct in _WEASYPRINT_OK_TYPES:
+        # Fast path: pass the original bytes straight through so an
+        # already web-safe image (PNG/JPEG) isn't needlessly re-encoded.
+        b64 = _b64.b64encode(blob).decode()
+        return f"data:{content_type};base64,{b64}"
+    img = _blob_to_pil_image(blob, content_type)
+    if img is None:
+        return ""
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = _b64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{b64}"
+
+
+def _hconcat_images(images: list, gap: int = 16):
+    """Concatenate images left-to-right on a white background, vertically
+    centered on the tallest one. Used for figures whose sub-panels — e.g.
+    (a)/(b) — are embedded in the DOCX as separate side-by-side images
+    sharing one caption, rather than as a single combined picture."""
+    from PIL import Image
+    total_w = sum(im.width for im in images) + gap * (len(images) - 1)
+    max_h = max(im.height for im in images)
+    canvas = Image.new("RGB", (total_w, max_h), (255, 255, 255))
+    x = 0
+    for im in images:
+        y = (max_h - im.height) // 2
+        canvas.paste(im, (x, y))
+        x += im.width + gap
+    return canvas
+
+
+def _blobs_to_data_uri(blobs: list) -> str:
+    """Encode one or more (blob, content_type) image tuples as a single
+    data URI. A lone image takes the normal single-image path. Multiple
+    images (a figure with separately-embedded sub-panels — see
+    _hconcat_images) are decoded and composited side-by-side into one
+    image, so a figure isn't silently truncated to just its first panel."""
+    if not blobs:
+        return ""
+    if len(blobs) == 1:
+        return _blob_to_data_uri(*blobs[0])
+
+    images = [img for img in (_blob_to_pil_image(b, ct) for b, ct in blobs) if img is not None]
+    if not images:
         return ""
 
+    import base64 as _b64, io
+    composite = images[0] if len(images) == 1 else _hconcat_images(images)
+    buf = io.BytesIO()
+    composite.save(buf, format="PNG")
+    return f"data:image/png;base64,{_b64.b64encode(buf.getvalue()).decode()}"
 
-def _build_figure_block(p, doc, fig_number: int, caption: str) -> dict:
-    """Extract image bytes (base64 data URI) and return a figure content block."""
-    data_uri = ""
 
-    # 1) DrawingML (modern DOCX: wp:inline / wp:anchor)
-    for tag in (f"{_DRAWING_NS}inline", f"{_DRAWING_NS}anchor"):
-        for drawing in p._element.findall(f".//{tag}"):
-            blip = drawing.find(f".//{_DRAW_A_NS}blip")
+def _read_xfrm_chOffExt(grp_elem):
+    """Read a wpg:wgp/wpg:grpSp element's own a:chOff/a:chExt — the
+    logical coordinate space its direct pic:pic children's <a:off>/<a:ext>
+    are expressed in. Returns (chOffX, chOffY, chExtCx, chExtCy) or None."""
+    grpSpPr = grp_elem.find(f"{_WPG_NS}grpSpPr")
+    if grpSpPr is None:
+        return None
+    xfrm = grpSpPr.find(f"{_DRAW_A_NS}xfrm")
+    if xfrm is None:
+        return None
+    chOff = xfrm.find(f"{_DRAW_A_NS}chOff")
+    chExt = xfrm.find(f"{_DRAW_A_NS}chExt")
+    if chOff is None or chExt is None:
+        return None
+    try:
+        return (int(chOff.get("x")), int(chOff.get("y")),
+                int(chExt.get("cx")), int(chExt.get("cy")))
+    except (TypeError, ValueError):
+        return None
+
+
+def _walk_group_pics(grp_elem, abs_x: float, abs_y: float, abs_cx: float, abs_cy: float) -> list:
+    """Recursively collect every pic:pic inside grp_elem — at ANY nesting
+    depth, flattened — with its position/size mapped into one absolute
+    coordinate space. Word groups can nest (e.g. two charts grouped
+    together as one sub-group, with a data-table picture placed as a
+    direct sibling of that sub-group rather than inside it — exactly the
+    shape of a "chart with an overlaid results table" composite figure),
+    and each nesting level has its own internal a:chOff/a:chExt coordinate
+    system, so a picture's raw <a:off>/<a:ext> is meaningless without
+    composing every ancestor group's transform down to one common frame.
+
+    (abs_x, abs_y, abs_cx, abs_cy) is where grp_elem's *own* chOff/chExt
+    origin+extent maps to in that common frame — pass grp_elem's own
+    chOff/chExt right back for the top-level call (identity transform).
+
+    Returns [(r_embed, x, y, cx, cy), ...] in the common frame's units.
+    """
+    grpSpPr = grp_elem.find(f"{_WPG_NS}grpSpPr")
+    xfrm = grpSpPr.find(f"{_DRAW_A_NS}xfrm") if grpSpPr is not None else None
+    if xfrm is None:
+        return []
+    chOff = xfrm.find(f"{_DRAW_A_NS}chOff")
+    chExt = xfrm.find(f"{_DRAW_A_NS}chExt")
+    if chOff is None or chExt is None:
+        return []
+    try:
+        chOffX, chOffY = int(chOff.get("x")), int(chOff.get("y"))
+        chExtCx, chExtCy = int(chExt.get("cx")), int(chExt.get("cy"))
+    except (TypeError, ValueError):
+        return []
+    if chExtCx <= 0 or chExtCy <= 0:
+        return []
+    scale_x = abs_cx / chExtCx
+    scale_y = abs_cy / chExtCy
+
+    def to_abs(x, y, cx, cy):
+        return (abs_x + (x - chOffX) * scale_x, abs_y + (y - chOffY) * scale_y,
+                cx * scale_x, cy * scale_y)
+
+    # Walk grp_elem's direct children IN DOCUMENT ORDER (paint order) —
+    # not pic:pic-then-grpSp in two separate passes, which would silently
+    # reorder them whenever a nested group appears *before* a sibling
+    # picture in the source (as it does here: two charts grouped together
+    # come first, then a data-table picture on top of each — processing
+    # all direct pics before recursing into the group would paint the
+    # charts last, burying the tables underneath them).
+    results = []
+    pic_tag = f"{_PIC_NS}pic"
+    grpsp_tag = f"{_WPG_NS}grpSp"
+    for child in grp_elem:
+        if child.tag == pic_tag:
+            blip = child.find(f".//{_DRAW_A_NS}blip")
             if blip is None:
                 continue
             r_embed = blip.get(f"{_REL_NS}embed")
             if not r_embed:
                 continue
+            spPr = child.find(f"{_PIC_NS}spPr")
+            pxfrm = spPr.find(f"{_DRAW_A_NS}xfrm") if spPr is not None else None
+            poff = pxfrm.find(f"{_DRAW_A_NS}off") if pxfrm is not None else None
+            pext = pxfrm.find(f"{_DRAW_A_NS}ext") if pxfrm is not None else None
+            if poff is None or pext is None:
+                continue
             try:
-                img_part = doc.part.related_parts[r_embed]
-                data_uri = _blob_to_data_uri(img_part.blob, img_part.content_type)
-            except Exception:
-                pass
-            if data_uri:
-                break
-        if data_uri:
-            break
+                x, y = int(poff.get("x")), int(poff.get("y"))
+                cx, cy = int(pext.get("cx")), int(pext.get("cy"))
+            except (TypeError, ValueError):
+                continue
+            results.append((r_embed, *to_abs(x, y, cx, cy)))
 
-    # 2) VML fallback (older DOCX: v:imagedata r:id="rId...")
-    if not data_uri:
+        elif child.tag == grpsp_tag:
+            sub_grpSpPr = child.find(f"{_WPG_NS}grpSpPr")
+            sub_xfrm = sub_grpSpPr.find(f"{_DRAW_A_NS}xfrm") if sub_grpSpPr is not None else None
+            sub_off = sub_xfrm.find(f"{_DRAW_A_NS}off") if sub_xfrm is not None else None
+            sub_ext = sub_xfrm.find(f"{_DRAW_A_NS}ext") if sub_xfrm is not None else None
+            if sub_off is None or sub_ext is None:
+                continue
+            try:
+                sx, sy = int(sub_off.get("x")), int(sub_off.get("y"))
+                scx, scy = int(sub_ext.get("cx")), int(sub_ext.get("cy"))
+            except (TypeError, ValueError):
+                continue
+            if scx <= 0 or scy <= 0:
+                continue
+            asx, asy, ascx, ascy = to_abs(sx, sy, scx, scy)
+            if ascx <= 0 or ascy <= 0:
+                continue
+            results.extend(_walk_group_pics(child, asx, asy, ascx, ascy))
+
+    return results
+
+
+def _extract_grouped_pic_specs(drawing) -> list:
+    """If `drawing` (a wp:inline/wp:anchor element) contains a Word GROUP
+    shape (wpg:wgp — multiple pictures the author selected and grouped
+    into one object, e.g. a data table image overlaid on a chart image to
+    build one composite figure panel, possibly with further nested
+    sub-groups), return every picture found at any nesting depth with its
+    position/size as fractions of the outermost group's coordinate space:
+    [{"r_embed", "fx", "fy", "fw", "fh"}, ...], in document order (=
+    paint/z order — later entries are drawn on top). Returns [] if
+    `drawing` isn't a usable group, so the caller falls back to treating
+    each picture as an independent, unpositioned image."""
+    for grp in drawing.findall(f".//{_WPG_NS}wgp"):
+        coord = _read_xfrm_chOffExt(grp)
+        if not coord:
+            continue
+        chOffX, chOffY, chExtCx, chExtCy = coord
+        if chExtCx <= 0 or chExtCy <= 0:
+            continue
+        flat = _walk_group_pics(grp, chOffX, chOffY, chExtCx, chExtCy)
+        if len(flat) < 2:
+            continue
+        return [
+            {
+                "r_embed": r_embed,
+                "fx": (x - chOffX) / chExtCx,
+                "fy": (y - chOffY) / chExtCy,
+                "fw": cx / chExtCx,
+                "fh": cy / chExtCy,
+            }
+            for r_embed, x, y, cx, cy in flat
+        ]
+    return []
+
+
+def _positioned_composite_to_data_uri(items: list, canvas_width: int = 1600) -> str:
+    """Composite pictures onto one canvas using each one's fractional
+    position/size within the group's overall bounding box, painting in
+    document order so a later item (e.g. a data table overlaid on a
+    chart) lands on top of an earlier one instead of beside it."""
+    from PIL import Image
+    import base64 as _b64, io
+
+    max_x = max((it["fx"] + it["fw"] for it in items), default=0)
+    max_y = max((it["fy"] + it["fh"] for it in items), default=0)
+    if max_x <= 0 or max_y <= 0:
+        return ""
+    canvas_height = max(1, int(canvas_width * max_y / max_x))
+    canvas = Image.new("RGB", (canvas_width, canvas_height), (255, 255, 255))
+
+    pasted = 0
+    for it in items:
+        img = _blob_to_pil_image(it["blob"], it["content_type"])
+        if img is None:
+            continue
+        w = max(1, round(it["fw"] / max_x * canvas_width))
+        h = max(1, round(it["fh"] / max_y * canvas_height))
+        x = round(it["fx"] / max_x * canvas_width)
+        y = round(it["fy"] / max_y * canvas_height)
+        img = img.resize((w, h))
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            img = img.convert("RGBA")
+            canvas.paste(img, (x, y), mask=img.split()[-1])
+        else:
+            canvas.paste(img.convert("RGB"), (x, y))
+        pasted += 1
+
+    if pasted == 0:
+        return ""
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return f"data:image/png;base64,{_b64.b64encode(buf.getvalue()).decode()}"
+
+
+def _build_figure_block(p, doc, fig_number: int, caption: str) -> dict:
+    """Extract image bytes (base64 data URI) and return a figure content
+    block. A figure paragraph can embed more than one image — e.g.
+    side-by-side (a)/(b) sub-panels pasted as two separate pictures under
+    one shared caption — so every image found is collected and, when
+    there's more than one, composited side-by-side (_blobs_to_data_uri)
+    rather than keeping only the first and silently dropping the rest."""
+    blobs = []  # [(blob, content_type), ...] in document order
+
+    # 1) DrawingML (modern DOCX: wp:inline / wp:anchor). A single
+    # wp:inline/wp:anchor can itself be a *group* shape (wpg:wgp, e.g.
+    # Word's "Group" command used to combine sub-panels — or a chart
+    # picture with a data-table picture overlaid on top of it — into one
+    # object) containing several pic:pic/blip elements. Try the
+    # position-aware group path first (it knows where each picture goes,
+    # e.g. "table overlaid in the chart's corner" vs. "beside it"); if a
+    # drawing isn't a group, fall back to collecting every blip in it
+    # (plain .find() would silently keep only the first and drop the rest).
+    group_items = None
+    for tag in (f"{_DRAWING_NS}inline", f"{_DRAWING_NS}anchor"):
+        for drawing in p._element.findall(f".//{tag}"):
+            specs = _extract_grouped_pic_specs(drawing)
+            if specs:
+                group_items = specs
+                continue
+            for blip in drawing.findall(f".//{_DRAW_A_NS}blip"):
+                r_embed = blip.get(f"{_REL_NS}embed")
+                if not r_embed:
+                    continue
+                try:
+                    img_part = doc.part.related_parts[r_embed]
+                    blobs.append((img_part.blob, img_part.content_type))
+                except Exception:
+                    pass
+
+    # 2) VML fallback (older DOCX: v:imagedata r:id="rId..."), only tried
+    # when DrawingML found nothing — same precedence as before.
+    if not blobs and not group_items:
         for imgdata in p._element.findall(f".//{_VML_NS}imagedata"):
             r_id = imgdata.get(f"{_REL_NS}id") or imgdata.get(f"{_O_NS}relid")
             if not r_id:
                 continue
             try:
                 img_part = doc.part.related_parts[r_id]
-                data_uri = _blob_to_data_uri(img_part.blob, img_part.content_type)
+                blobs.append((img_part.blob, img_part.content_type))
             except Exception:
                 pass
-            if data_uri:
-                break
+
+    if group_items:
+        for item in group_items:
+            try:
+                img_part = doc.part.related_parts[item["r_embed"]]
+                item["blob"] = img_part.blob
+                item["content_type"] = img_part.content_type
+            except Exception:
+                item["blob"] = None
+        group_items = [it for it in group_items if it["blob"] is not None]
+        data_uri = _positioned_composite_to_data_uri(group_items) if group_items else ""
+        if not data_uri:
+            data_uri = _blobs_to_data_uri(blobs)  # last-resort fallback
+    else:
+        data_uri = _blobs_to_data_uri(blobs)
 
     return {
         "type":     "figure",
