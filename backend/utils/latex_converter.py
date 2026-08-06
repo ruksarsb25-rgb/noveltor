@@ -644,10 +644,19 @@ class LaTeXGenerator:
             )
         right = f"\\includegraphics[{logo_opts}]{{{brand_path}}}" if brand_path else ""
 
+        # \centering/\raggedleft are paragraph-mode declarations: left
+        # dangling with no content after them (e.g. when a logo is missing
+        # and its cell would otherwise be empty), the row-ending \\ has no
+        # line to close and pdflatex aborts with "There's no line here to
+        # end." Only emit the declaration together with actual content —
+        # an empty cell with no declaration at all is harmless.
+        center_cell = f"\\centering {center}" if center else ""
+        right_cell = f"\\raggedleft {right}" if right else ""
+
         return (
             "\\noindent\n"
             "\\begin{tabular}{@{}m{0.18\\textwidth}m{0.54\\textwidth}m{0.24\\textwidth}@{}}\n"
-            f"{left} & \\centering {center} & \\raggedleft {right} \\\\\n"
+            f"{left} & {center_cell} & {right_cell} \\\\\n"
             "\\end{tabular}\\par\n"
             "\\vspace{4pt}\n\n"
         )
