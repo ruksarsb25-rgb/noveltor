@@ -467,7 +467,17 @@ class LaTeXGenerator:
         return latex
 
     def format_table(self, table: Dict[str, Any], caption: str = "") -> str:
-        """Format a table in LaTeX."""
+        """
+        Format a table in LaTeX using xltabular (longtable's page-splitting
+        + tabularx's auto-width X columns).
+
+        A plain tabularx/tabular table — floated with [H] or not — is an
+        unbreakable block: if it doesn't fit in the space left on the page,
+        LaTeX moves the *whole thing* to the next page, leaving a gap where
+        it "should" have been. [H] alone can't fix that; only letting the
+        table itself split across the page break (what longtable/xltabular
+        are for) actually does.
+        """
         rows = table.get("rows", [])
         headers = table.get("headers", [])
 
@@ -476,48 +486,46 @@ class LaTeXGenerator:
 
         # Estimate columns
         num_cols = len(headers) if headers else (len(rows[0]) if rows else 1)
-
-        # [H] (float package) pins the table exactly where it's declared in
-        # the source instead of letting LaTeX's float-placement algorithm
-        # defer it to fit — which was leaving a large gap of unfilled space
-        # on the page where the table "should" have been while it floated
-        # down to the next page instead.
-        latex = "\\begin{table}[H]\n\\centering\n"
+        col_spec = f"|*{{{num_cols}}}{{X|}}"  # centering/vertical-centering
+        # comes from the global \tabularxcolumn redefinition in generate()
 
         # \caption{} already prints its own "Table N:" prefix, so strip the
         # manuscript's own "Table N" label from a real description to avoid
-        # doubling it. If there's no better text (the caption field is just
-        # the bare label, or empty), fall back to the label itself — every
-        # table gets *some* caption rather than silently having none.
+        # doubling it. If there's no better text beyond the bare label,
+        # caption with empty braces — LaTeX's auto-numbering alone still
+        # gives a visible "Table N:" line (every table gets *some* caption),
+        # without the double-labelling a fallback of the raw "Table N" text
+        # would cause once \caption{} prefixes it again.
         caption_text = _LEADING_TABLE_LABEL_RE.sub('', caption).strip() if caption else ""
-        if not caption_text:
-            caption_text = (table.get("label") or "").strip()
-        if caption_text:
-            latex += f"\\caption{{{self.escape_latex(caption_text)}}}\n"
+        caption_cmd = f"\\caption{{{self.escape_latex(caption_text)}}}" if caption_text else "\\caption{}"
 
-        # tabularx's X columns share the available \textwidth and wrap cell
-        # text to fit, instead of plain "l" columns running off the page
-        # edge for wide tables. >{\centering\arraybackslash} centers cell
-        # content (headers and body) instead of the default ragged-left.
-        latex += (
-            f"\\begin{{tabularx}}{{\\textwidth}}"
-            f"{{|*{{{num_cols}}}{{>{{\\centering\\arraybackslash}}X|}}}}\n\\hline\n"
-        )
-
-        # Headers — bold, white text on the brand navy background
+        header_row = ""
         if headers:
-            latex += "\\rowcolor{nfpnavy}\n"
-            latex += " & ".join(
-                f"\\textcolor{{white}}{{\\textbf{{{self.escape_latex(str(h))}}}}}" for h in headers
+            header_row = (
+                "\\rowcolor{nfpnavy}\n"
+                + " & ".join(f"\\textcolor{{white}}{{\\textbf{{{self.escape_latex(str(h))}}}}}" for h in headers)
+                + " \\\\\n\\hline\n"
             )
-            latex += " \\\\\n\\hline\n"
+
+        latex = f"\\begin{{xltabular}}{{\\textwidth}}{{{col_spec}}}\n"
+        latex += f"{caption_cmd} \\\\\n\\hline\n{header_row}\\endfirsthead\n\n"
+        # Repeated on every page the table continues onto
+        latex += (
+            f"\\multicolumn{{{num_cols}}}{{l}}{{\\small\\itshape (Table continued)}} \\\\\n"
+            f"\\hline\n{header_row}\\endhead\n\n"
+        )
+        latex += (
+            f"\\hline \\multicolumn{{{num_cols}}}{{r}}{{\\small\\itshape (continued on next page)}} \\\\\n"
+            "\\endfoot\n\n"
+        )
+        latex += "\\hline\n\\endlastfoot\n\n"
 
         # Rows
         for row in rows:
             latex += " & ".join(self.escape_latex(str(cell)) for cell in row)
             latex += " \\\\\n"
 
-        latex += "\\hline\n\\end{tabularx}\n\\end{table}\n\n"
+        latex += "\\end{xltabular}\n\n"
         return latex
 
     def format_references(self) -> str:
@@ -595,9 +603,19 @@ class LaTeXGenerator:
 \usepackage[table]{xcolor}
 \usepackage{tabularx}
 \usepackage{array}
-% Float package's [H] placement pins a table/figure exactly where declared
-% instead of LaTeX's normal float algorithm deferring it to fit — that
-% deferral was leaving a large gap where the table "should" have been.
+% xltabular = longtable's page-splitting + tabularx's auto-width X columns,
+% so a data table too tall for the remaining page space flows onto the next
+% page instead of jumping there as one unbreakable block and leaving a gap.
+\usepackage{xltabular}
+% Redefine X columns to use array's "m" (vertically centered) instead of
+% tabularx's default "p" (top-aligned), on top of horizontal centering —
+% fixes multi-line wrapped header/cell text sitting at the top of a taller
+% row instead of centered in it. Documented technique from the tabularx
+% package itself for exactly this case.
+\renewcommand{\tabularxcolumn}[1]{>{\centering\arraybackslash}m{#1}}
+% Float package's [H] placement pins a figure exactly where declared
+% instead of LaTeX's normal float algorithm deferring it to fit (tables no
+% longer use this — xltabular above is a better fix for them specifically).
 \usepackage{float}
 
 % Brand colors, matching the WeasyPrint template's palette

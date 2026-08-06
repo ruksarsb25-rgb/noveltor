@@ -733,7 +733,18 @@ def _math_para_to_image(p) -> str:
         )
         pngs = glob.glob(os.path.join(out_dir, "*.png"))
         if pngs:
-            img = Image.open(pngs[0]).convert("RGB")
+            img = Image.open(pngs[0])
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                # Same transparency-compositing fix as _blob_to_data_uri(): a
+                # plain .convert("RGB") drops the alpha channel without
+                # compositing, exposing whatever raw color sits under the
+                # "transparent" area instead of rendering it as white.
+                img = img.convert("RGBA")
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            else:
+                img = img.convert("RGB")
             img = _smart_crop(img)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
@@ -831,7 +842,24 @@ def _blob_to_data_uri(blob: bytes, content_type: str) -> str:
             )
             pngs = glob.glob(os.path.join(out_dir, "*.png"))
             if pngs:
-                img = Image.open(pngs[0]).convert("RGB")
+                img = Image.open(pngs[0])
+                if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                    # LibreOffice's EMF/WMF rendering often leaves the area
+                    # outside the actual chart transparent. Plain
+                    # .convert("RGB") on an RGBA image just drops the alpha
+                    # channel — it does NOT composite onto white — so
+                    # whatever raw color happens to sit under those
+                    # "invisible" pixels (frequently a solid blue/black
+                    # placeholder from the renderer) becomes visible as a
+                    # wrong-colored background fill. Composite onto white
+                    # first so transparent areas render as white, like the
+                    # original chart actually looks.
+                    img = img.convert("RGBA")
+                    background = Image.new("RGB", img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[-1])
+                    img = background
+                else:
+                    img = img.convert("RGB")
                 img = _smart_crop(img)
                 import io
                 buf = io.BytesIO()
