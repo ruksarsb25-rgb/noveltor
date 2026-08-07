@@ -338,7 +338,7 @@ def export_xml_zip():
     if not data:
         return jsonify({"error": "No JSON body provided"}), 400
     try:
-        from jats.generator import generate_jats, fig_filename, eq_filename
+        from jats.generator import generate_jats, fig_filename, eq_filename, detect_image_ext
 
         xml_str = generate_jats(data)
         slug    = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
@@ -371,7 +371,10 @@ def export_xml_zip():
 
                         if btype == "figure":
                             fig_counter += 1
-                            fname = fig_filename(data, fig_counter)
+                            # Must match _inline_fig()'s href/mime-subtype exactly
+                            # (same detection, same figure), or the XML points at
+                            # a filename that isn't the one actually in the ZIP.
+                            fname = fig_filename(data, fig_counter, detect_image_ext(uri))
                             if img_bytes:
                                 zf.writestr(fname, img_bytes)
                         elif btype == "equation":

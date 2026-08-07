@@ -103,15 +103,43 @@ def generate_jats(data: dict) -> str:
 # Figure filename helper (used by both XML generator and ZIP exporter)
 # ---------------------------------------------------------------------------
 
-def fig_filename(data: dict, fig_num: int) -> str:
+def detect_image_ext(data_uri: str) -> str:
+    """Return the real filename extension for a data: URI's actual image
+    format, read from its declared MIME type — not assumed. The parser
+    normalizes most converted figures (EMF/WMF charts, multi-panel
+    composites built from grouped Word pictures) to PNG regardless of the
+    original DOCX image format, so a filename/mime-subtype that always
+    says "jpeg" no longer matches the real bytes for most figures.
+    Declared-vs-actual image type mismatch is exactly what a strict JATS
+    consumer (PMC, an OJS ingestion pipeline) rejects as corrupted, even
+    though the bytes themselves are a perfectly valid image.
+    Defaults to "jpeg" (the historical assumption) if undetectable."""
+    if not data_uri or not data_uri.startswith("data:"):
+        return "jpeg"
+    header = data_uri.split(",", 1)[0]  # "data:image/png;base64"
+    m = re.search(r"data:image/([a-zA-Z0-9.+-]+)", header)
+    if not m:
+        return "jpeg"
+    sub = m.group(1).lower()
+    if sub == "png":
+        return "png"
+    if sub == "gif":
+        return "gif"
+    return "jpeg"  # jpg/jpeg and anything unrecognized
+
+
+def fig_filename(data: dict, fig_num: int, ext: str = "jpeg") -> str:
     """
-    Return the canonical filename for figure N, e.g. 'Novel_Energy-1-1-g3.jpeg'.
-    Pattern mirrors Data.xml: {journal_slug}-{vol}-{issue}-g{N}.jpeg
+    Return the canonical filename for figure N, e.g. 'Novel_Energy-1-1-g3.png'.
+    Pattern mirrors Data.xml: {journal_slug}-{vol}-{issue}-g{N}.{ext}
+    `ext` must be the figure's REAL image format (see detect_image_ext) —
+    it has to match the actual bytes written to the export ZIP, or a
+    strict JATS consumer will reject the file as corrupted.
     """
     journal  = re.sub(r"[^\w]", "_", data.get("journal_name", "NFP")).strip("_")
     vol      = str(data.get("volume")  or "1")
     issue    = str(data.get("issue")   or "1")
-    return f"{journal}-{vol}-{issue}-g{fig_num}.jpeg"
+    return f"{journal}-{vol}-{issue}-g{fig_num}.{ext}"
 
 
 def eq_filename(data: dict, eq_num: int) -> str:
@@ -414,7 +442,8 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
     """
     label   = block.get("label") or f"Figure {n}"
     caption = block.get("caption", "")
-    fname   = fig_filename(data, n)
+    ext     = detect_image_ext(block.get("data_uri", ""))
+    fname   = fig_filename(data, n, ext)
 
     fig_el = SubElement(parent, "fig", {"id": f"figure-{n}"})
     _mixed(SubElement(fig_el, "label"), label)
@@ -424,7 +453,7 @@ def _inline_fig(parent: Element, block: dict, data: dict, n: int):
     SubElement(fig_el, "graphic", {
         "href":         fname,
         "mimetype":     "image",
-        "mime-subtype": "jpeg",
+        "mime-subtype": ext,
     })
 
 
