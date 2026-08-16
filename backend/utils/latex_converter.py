@@ -189,6 +189,19 @@ def equation_to_latex(equation_text: str) -> str:
     return latex
 
 
+def _author_affs(a: Dict[str, Any]) -> List[str]:
+    """An author's affiliations as a list — "affiliations" (an author can
+    belong to more than one institution) if present, else the legacy
+    single "affiliation" string wrapped in a list, for records from before
+    the list field existed. Same helper as the WeasyPrint templates use,
+    so every export agrees on affiliation numbering for the same article."""
+    affs = a.get("affiliations")
+    if affs:
+        return [s.strip() for s in affs if (s or "").strip()]
+    single = (a.get("affiliation") or "").strip()
+    return [single] if single else []
+
+
 class LaTeXGenerator:
     """Generate complete LaTeX documents from article data."""
 
@@ -331,14 +344,17 @@ class LaTeXGenerator:
         return text
 
     def _build_affils(self) -> List[str]:
-        """Unique affiliations in first-seen order — same dedup logic as
-        the WeasyPrint template's _build_affils(), so both outputs agree
-        on affiliation numbering for the same article."""
+        """Unique affiliations across ALL authors' affiliation lists, in
+        first-seen order — same dedup logic as the WeasyPrint template's
+        _build_affils(), so both outputs agree on affiliation numbering
+        for the same article. An author can belong to more than one
+        institution, so this flattens every author's list rather than
+        assuming one affiliation each."""
         seen: List[str] = []
         for a in self.authors:
-            aff = (a.get("affiliation") or "").strip()
-            if aff and aff not in seen:
-                seen.append(aff)
+            for aff in _author_affs(a):
+                if aff not in seen:
+                    seen.append(aff)
         return seen
 
     def format_title_block(self) -> str:
@@ -386,9 +402,9 @@ class LaTeXGenerator:
                 continue
             sups = []
             if multi_affil:
-                aff = (a.get("affiliation") or "").strip()
-                if aff in affils:
-                    sups.append(str(affils.index(aff) + 1))
+                for aff in _author_affs(a):
+                    if aff in affils:
+                        sups.append(str(affils.index(aff) + 1))
             if a.get("corresponding"):
                 sups.append("*")
             chunk = self.escape_latex(name)

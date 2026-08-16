@@ -70,7 +70,12 @@ export function defaultAuthor() {
   return {
     first_name: "",
     last_name: "",
-    affiliation: "",
+    // An author can belong to more than one institution (e.g. a joint
+    // appointment) — each entry gets its own numbered superscript in
+    // exports, shared with any other author who has the exact same
+    // affiliation text. Starts with one empty slot for a clean new-author
+    // form; MetadataScreen's "+ Add affiliation" adds more.
+    affiliations: [""],
     email: "",
     orcid: "",
     corresponding: true,

@@ -108,7 +108,9 @@ function PreviewTable({ table }) {
 
 function ArticlePreview({ article }) {
   const authors = (article.authors || []).map((a) => `${a.first_name} ${a.last_name}`.trim()).join(", ");
-  const affiliations = [...new Set((article.authors || []).map((a) => a.affiliation).filter(Boolean))];
+  const affiliations = [...new Set(
+    (article.authors || []).flatMap((a) => (a.affiliations?.length ? a.affiliations : [a.affiliation]).filter(Boolean))
+  )];
   const corrAuthor = (article.authors || []).find((a) => a.corresponding);
   const journalName = article.journal_name || "Novel Future Proceedings";
   const journalLogo = article.journal_logo || "";

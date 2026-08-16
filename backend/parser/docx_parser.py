@@ -1320,13 +1320,17 @@ def _parse_authors(raw: str) -> list:
     for author in authors:
         sup_nums = author.pop("_sup_nums", [])
         # An author affiliated with more than one institution (e.g. "5,6")
-        # gets each affiliation's text, deduplicated and joined — the
-        # author record has a single "affiliation" field, not a list.
+        # gets each affiliation's text, deduplicated, as a real list —
+        # "affiliations" is the source of truth (each entry gets its own
+        # numbered superscript in exports); "affiliation" is kept as a
+        # joined-string convenience/legacy field for any code not yet
+        # updated to read the list.
         affs = []
         for n in sup_nums:
             aff = affil_map.get(n, "")
             if aff and aff not in affs:
                 affs.append(aff)
+        author["affiliations"] = affs
         author["affiliation"] = "; ".join(affs)
         if author["corresponding"]:
             author["email"] = corresp_emails[email_idx] if email_idx < len(corresp_emails) else ""
@@ -1337,7 +1341,7 @@ def _parse_authors(raw: str) -> list:
 
 def _empty_author() -> dict:
     return {
-        "first_name": "", "last_name": "", "affiliation": "",
+        "first_name": "", "last_name": "", "affiliation": "", "affiliations": [],
         "email": "", "orcid": "", "corresponding": True,
     }
 

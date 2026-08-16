@@ -70,6 +70,27 @@ export default function MetadataScreen({ article, onChange, onNext, onRegenerate
     onChange({ ...article, authors });
   };
 
+  const updateAuthorAffiliation = (i, j, value) => {
+    const authors = [...article.authors];
+    const affiliations = [...(authors[i].affiliations || [""])];
+    affiliations[j] = value;
+    authors[i] = { ...authors[i], affiliations };
+    onChange({ ...article, authors });
+  };
+
+  const addAuthorAffiliation = (i) => {
+    const authors = [...article.authors];
+    authors[i] = { ...authors[i], affiliations: [...(authors[i].affiliations || []), ""] };
+    onChange({ ...article, authors });
+  };
+
+  const removeAuthorAffiliation = (i, j) => {
+    const authors = [...article.authors];
+    const affiliations = (authors[i].affiliations || [""]).filter((_, idx) => idx !== j);
+    authors[i] = { ...authors[i], affiliations: affiliations.length ? affiliations : [""] };
+    onChange({ ...article, authors });
+  };
+
   const addAuthor = () => onChange({ ...article, authors: [...article.authors, defaultAuthor()] });
 
   const removeAuthor = (i) => {
@@ -201,8 +222,33 @@ export default function MetadataScreen({ article, onChange, onNext, onRegenerate
               <FormField label="ORCID">
                 <Input value={author.orcid} onChange={(e) => updateAuthor(i, "orcid", e.target.value)} placeholder="0000-0000-0000-0000" />
               </FormField>
-              <FormField label="Affiliation" className="col-span-2">
-                <Input value={author.affiliation} onChange={(e) => updateAuthor(i, "affiliation", e.target.value)} placeholder="Department, University, Country" />
+              <FormField label="Affiliation(s)" className="col-span-2">
+                <div className="space-y-2">
+                  {(author.affiliations?.length ? author.affiliations : [""]).map((aff, j) => (
+                    <div key={j} className="flex items-center gap-2">
+                      <Input
+                        value={aff}
+                        onChange={(e) => updateAuthorAffiliation(i, j, e.target.value)}
+                        placeholder="Department, University, Country"
+                      />
+                      {(author.affiliations?.length || 1) > 1 && (
+                        <button
+                          onClick={() => removeAuthorAffiliation(i, j)}
+                          className="p-1 text-red-400 hover:text-red-600 flex-shrink-0"
+                          title="Remove affiliation"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addAuthorAffiliation(i)}
+                    className="text-sm text-[#0F3557] hover:underline"
+                  >
+                    + Add affiliation
+                  </button>
+                </div>
               </FormField>
             </div>
 

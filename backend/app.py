@@ -181,7 +181,11 @@ def export_abstracts_xml():
                 family_el.set("locale", locale)
                 family_el.text = (a.get("last_name") or "").strip()
 
-                aff = (a.get("affiliation") or "").strip()
+                # OJS's native.xsd <affiliation> is one field per author —
+                # join multiple affiliations (an author can belong to more
+                # than one institution) rather than dropping all but one.
+                affs = a.get("affiliations") or ([a["affiliation"]] if a.get("affiliation") else [])
+                aff = "; ".join(s.strip() for s in affs if (s or "").strip())
                 if aff:
                     aff_el = SubElement(author_el, "affiliation")
                     aff_el.set("locale", locale)

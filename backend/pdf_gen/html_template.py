@@ -267,12 +267,27 @@ def _logo_svg() -> str:
     )
 
 
+def _author_affs(a: dict) -> list:
+    """An author's affiliations as a list — "affiliations" (an author can
+    belong to more than one institution) if present, else the legacy
+    single "affiliation" string wrapped in a list, for records from before
+    the list field existed."""
+    affs = a.get("affiliations")
+    if affs:
+        return [s.strip() for s in affs if (s or "").strip()]
+    single = (a.get("affiliation") or "").strip()
+    return [single] if single else []
+
+
 def _build_affils(authors: list) -> list:
+    """Unique affiliation strings across ALL authors' affiliation lists,
+    in first-seen order — two authors (or one author's two entries) with
+    the exact same text share one number."""
     seen: list[str] = []
     for a in authors:
-        aff = (a.get("affiliation") or "").strip()
-        if aff and aff not in seen:
-            seen.append(aff)
+        for aff in _author_affs(a):
+            if aff not in seen:
+                seen.append(aff)
     return seen
 
 
@@ -451,9 +466,9 @@ def build_html(article: dict, two_col: bool = False) -> str:
         name = f"{(a.get('first_name') or '').strip()} {(a.get('last_name') or '').strip()}".strip()
         sups = []
         if multi_affil:
-            aff = (a.get("affiliation") or "").strip()
-            if aff in affils:
-                sups.append(str(affils.index(aff) + 1))
+            for aff in _author_affs(a):
+                if aff in affils:
+                    sups.append(str(affils.index(aff) + 1))
         if a.get("corresponding"):
             sups.append("*")
         sup_str = ",".join(sups)

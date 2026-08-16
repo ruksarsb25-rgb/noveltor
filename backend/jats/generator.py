@@ -46,6 +46,19 @@ _SUB_SUP_DIGIT_MAP = {
 }
 
 
+def _author_affs(a: dict) -> list:
+    """An author's affiliations as a list — "affiliations" (an author can
+    belong to more than one institution) if present, else the legacy
+    single "affiliation" string wrapped in a list, for records from before
+    the list field existed. Same helper as the PDF templates use, so every
+    export agrees on affiliation identity for the same article."""
+    affs = a.get("affiliations")
+    if affs:
+        return [s.strip() for s in affs if (s or "").strip()]
+    single = (a.get("affiliation") or "").strip()
+    return [single] if single else []
+
+
 def _normalize_caption_for_match(text: str) -> str:
     """Collapse a caption to lowercase alphanumerics only, with <sub>/<sup>/
     <strong>/<em> tags stripped and Unicode sub/superscript digits folded to
@@ -319,18 +332,22 @@ def _build_contribs(am: Element, authors: list):
             _text(SubElement(contrib, "contrib-id", {"contrib-id-type": "orcid"}),
                   author["orcid"])
 
-        # address (country + email) — mirrors Data.xml
+        author_affs = _author_affs(author)
+
+        # address (country + email) — mirrors Data.xml. <address> takes one
+        # country, so an author with several affiliations gets the first's.
         addr = SubElement(contrib, "address")
-        if author.get("affiliation"):
+        if author_affs:
             # Try to extract country from affiliation string (last comma-separated part)
-            parts = [p.strip() for p in author["affiliation"].split(",")]
+            parts = [p.strip() for p in author_affs[0].split(",")]
             _text(SubElement(addr, "country"), parts[-1] if parts else "")
         if author.get("email"):
             _text(SubElement(addr, "email"), author["email"])
 
-        # xref → affiliation
-        if author.get("affiliation"):
-            aid = aff_id(author["affiliation"])
+        # xref → affiliation(s) — one per affiliation, so an author
+        # belonging to more than one institution links to all of them.
+        for aff_text in author_affs:
+            aid = aff_id(aff_text)
             SubElement(contrib, "xref", {"rid": aid, "ref-type": "aff"})
 
         # xref → corresp (for corresponding authors)

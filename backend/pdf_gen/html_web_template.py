@@ -56,6 +56,18 @@ def _e_fmt(s) -> str:
     return _SUB_SUP_RE.sub(r'<\1>', _html.escape(str(s or ""), quote=False))
 
 
+def _author_affs(a: dict) -> list:
+    """An author's affiliations as a list — "affiliations" (an author can
+    belong to more than one institution) if present, else the legacy
+    single "affiliation" string wrapped in a list, for records from before
+    the list field existed."""
+    affs = a.get("affiliations")
+    if affs:
+        return [s.strip() for s in affs if (s or "").strip()]
+    single = (a.get("affiliation") or "").strip()
+    return [single] if single else []
+
+
 def _render_content_blocks(content: list) -> str:
     html = ""
     for block in content:
@@ -178,20 +190,23 @@ def build_web_html(article: dict) -> str:
     toc_html = "<ul>" + "".join(toc_items) + "</ul>"
 
     # ── Authors block ────────────────────────────────────────────────────────
-    # Build affiliation index
+    # Build affiliation index — an author can belong to more than one
+    # institution, so this indexes every affiliation across every author's
+    # list, not just one per author. Two entries with identical text
+    # (across the same or different authors) share one number.
     affil_list = []
     affil_map  = {}
     for a in authors:
-        aff = (a.get("affiliation") or "").strip()
-        if aff and aff not in affil_map:
-            affil_map[aff] = len(affil_list) + 1
-            affil_list.append(aff)
+        for aff in _author_affs(a):
+            if aff not in affil_map:
+                affil_map[aff] = len(affil_list) + 1
+                affil_list.append(aff)
 
     author_names = []
     for a in authors:
         name = f"{a.get('first_name','')} {a.get('last_name','')}".strip()
-        aff  = (a.get("affiliation") or "").strip()
-        sup  = f"<sup>{affil_map[aff]}</sup>" if aff and aff in affil_map else ""
+        sup_nums = [str(affil_map[aff]) for aff in _author_affs(a) if aff in affil_map]
+        sup  = f"<sup>{','.join(sup_nums)}</sup>" if sup_nums else ""
         corr = '<sup>✉</sup>' if a.get("corresponding") else ""
         orcid_html = ""
         if a.get("orcid"):
@@ -299,7 +314,7 @@ def build_web_html(article: dict) -> str:
     contributors_html = ""
     for a in authors:
         name = f"{a.get('first_name','')} {a.get('last_name','')}".strip()
-        aff  = a.get("affiliation") or ""
+        aff  = "; ".join(_author_affs(a))
         email = a.get("email") or ""
         orcid = a.get("orcid") or ""
         contributors_html += f'<div class="contributor">'
