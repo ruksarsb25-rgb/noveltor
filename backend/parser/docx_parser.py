@@ -20,7 +20,21 @@ _CORRESP_LINE_RE = re.compile(r'\*?\s*corresponding\s+authors?\s*[:\-]', re.IGNO
 
 # Matches Unicode superscript runs OR digits glued directly to a letter (regular superscripts)
 # Updated to also match asterisks before digits (like N*1, N*2) and after (like R3*, R4*)
-_AUTHOR_MARKER_RE = re.compile(r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+,?\*?|(?<=[A-Za-z])\*?\d+,?\*?)')
+# (?:,\d+)* / (?:,[¹²³⁴⁵⁶⁷⁸⁹⁰]+)* absorbs further comma-joined numbers so an author
+# affiliated with more than one institution — "Chan5,6" — is captured as ONE marker
+# ("5,6"). Without it, \d+ only ever grabs the first digit run; the second number
+# (and its leading comma) falls outside the match and gets glued onto the START of
+# the next author's name instead (e.g. "6, H. C. Ananda Murthy" as one "name").
+_AUTHOR_MARKER_RE = re.compile(
+    r'([¹²³⁴⁵⁶⁷⁸⁹⁰]+(?:,[¹²³⁴⁵⁶⁷⁸⁹⁰]+)*,?\*?|(?<=[A-Za-z])\*?\d+(?:,\d+)*,?\*?)'
+)
+
+# An affiliation line prefixed with its number — "1Department of...",
+# "2 Department of..." (some authors leave a stray space after the digit).
+# One-or-two-digit affiliation number directly followed by a letter (with at
+# most a single space between): deliberately excludes "2.1 " so a genuine
+# numbered subsection heading is never mistaken for an affiliation line.
+_AFFIL_LINE_RE = re.compile(r'^(?:[¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,2})\s?[A-Za-z]')
 
 # Heading / structure detection
 # Numbered heading: "1. Introduction", "2.1 Chemicals", "3.2.1 Sub" — must start capital after number
@@ -525,7 +539,19 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             # Use strict detection only — bold decorative headings (e.g. "Graphical
             # Abstract") must not prematurely end author collection before the
             # real Abstract heading is encountered.
-            if heading_explicit:
+            #
+            # A numbered-heading-shaped line ("N " + capital letter) can also
+            # match a numbered affiliation line by coincidence — e.g. "2
+            # Department of Physics..." with a stray space after the "2" —
+            # which would otherwise end author collection right there and
+            # silently drop every affiliation after it (and misroute the
+            # real Abstract/body into whatever "section" that line started).
+            # Once at least one author line is already collected, a line
+            # that itself looks like "<number><affiliation text>" is treated
+            # as an affiliation, not a heading, regardless of what
+            # _classify_heading thinks.
+            looks_like_affil = bool(authors_raw_lines) and bool(_AFFIL_LINE_RE.match(text))
+            if heading_explicit and not looks_like_affil:
                 state["authors_raw"] = "\n".join(authors_raw_lines)
                 phase = "body"
                 # intentional fall-through to body processing below
@@ -1292,8 +1318,16 @@ def _parse_authors(raw: str) -> list:
     # Assign affiliations and emails
     email_idx = 0
     for author in authors:
-        sup = author.pop("_sup", "")
-        author["affiliation"] = affil_map.get(sup, "")
+        sup_nums = author.pop("_sup_nums", [])
+        # An author affiliated with more than one institution (e.g. "5,6")
+        # gets each affiliation's text, deduplicated and joined — the
+        # author record has a single "affiliation" field, not a list.
+        affs = []
+        for n in sup_nums:
+            aff = affil_map.get(n, "")
+            if aff and aff not in affs:
+                affs.append(aff)
+        author["affiliation"] = "; ".join(affs)
         if author["corresponding"]:
             author["email"] = corresp_emails[email_idx] if email_idx < len(corresp_emails) else ""
             email_idx += 1
@@ -1313,8 +1347,10 @@ def _split_author_line(line: str) -> list:
     Split an author name line on superscript markers (Unicode ¹²³⁴ or
     digits glued directly to a letter like M1*).
 
-    Returns a list of author dicts with a temporary '_sup' key holding
-    the normalised affiliation number string.
+    Returns a list of author dicts with a temporary '_sup_nums' key holding
+    the list of normalised affiliation-number strings (usually one, but an
+    author affiliated with more than one institution has several, e.g.
+    "Chan5,6" -> ["5", "6"]).
     """
     print(f"DEBUG _split_author_line: input = {line[:100]}...")
     parts = _AUTHOR_MARKER_RE.split(line)
@@ -1335,11 +1371,15 @@ def _split_author_line(line: str) -> list:
         if not name_raw:
             continue
 
-        sup_num = marker.replace('*', '').replace(',', '').translate(_SUP_TO_NUM)
         is_corresp = '*' in marker
+        # Strip the asterisk and any trailing/leading separator comma, then
+        # split the remainder on ',' so "5,6" becomes ["5", "6"] instead of
+        # collapsing into the single (nonexistent) affiliation number "56".
+        marker_nums = marker.replace('*', '').strip(',').translate(_SUP_TO_NUM)
+        sup_nums = [n for n in marker_nums.split(',') if n]
 
         first, last = _split_name(name_raw)
-        print(f"DEBUG: Author {i//2 + 1}: first='{first}' last='{last}' sup='{sup_num}' corresp={is_corresp}")
+        print(f"DEBUG: Author {i//2 + 1}: first='{first}' last='{last}' sup={sup_nums} corresp={is_corresp}")
         authors.append({
             "first_name": first,
             "last_name": last,
@@ -1347,7 +1387,7 @@ def _split_author_line(line: str) -> list:
             "email": "",
             "orcid": "",
             "corresponding": is_corresp,
-            "_sup": sup_num,
+            "_sup_nums": sup_nums,
         })
 
     print(f"DEBUG: _split_author_line returning {len(authors)} authors")
@@ -1444,7 +1484,7 @@ def _fallback_comma_split(line: str) -> list:
             "email": "",
             "orcid": "",
             "corresponding": i == 0,
-            "_sup": str(i + 1),
+            "_sup_nums": [str(i + 1)],
         })
     print(f"DEBUG _fallback_comma_split: returning {len(result)} authors")
     return result
