@@ -407,7 +407,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
         # ── OMML equation detection (before blank-text skip) ─────────────────
         # Detect equations in ANY phase, but handle specially for pre-body
         if _has_math(p._element):
-            combined_text, omml_list, has_prose = _split_para_math(p)
+            combined_text, omml_list, has_prose, eq_prefix, eq_suffix = _split_para_math(p)
 
             if current_section is None:
                 current_section = _new_section("", "Other")
@@ -428,6 +428,16 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 mathml = mathml_from_omml(omml) if omml else ""
                 eq_text = " ".join(extract_equation_text(o) for o in omml_list).strip()
                 eq_latex = " ".join(omml_to_latex(o) for o in omml_list).strip()
+                # eq_text/eq_latex are rebuilt purely from omml_list, which
+                # never had the "D = " lead-in typed as plain text before
+                # the equation object — fold it back on (and any trailing
+                # "----(N)" suffix that landed outside the OMML) so the
+                # exported equation still reads "D = <fraction>" instead of
+                # silently dropping which variable it defines.
+                if eq_text:
+                    eq_text = " ".join(filter(None, [eq_prefix, eq_text, eq_suffix]))
+                if eq_latex:
+                    eq_latex = " ".join(filter(None, [eq_prefix, eq_latex, eq_suffix]))
 
                 if omml or data_uri:
                     target.append({
@@ -725,6 +735,23 @@ def _has_math(p_element) -> bool:
     return bool(p_element.findall(f".//{_MATH_NS}oMath"))
 
 
+_TAG_STRIP_RE = re.compile(r'<[^>]+>')
+# Plain text directly outside an m:oMath that's just the equation's own
+# decoration, not real sentence prose: a short "variable =" lead-in a user
+# typed before inserting the equation object for just the fraction/
+# expression (e.g. "D = ", "C0 = ", "ip = "), or a trailing "----(N)"/"(N)"
+# equation-number suffix. Either shape means the paragraph is still one
+# single display equation, not prose with inline math mixed in.
+_EQ_ADORNMENT_RE = re.compile(
+    r'^(?:[A-Za-z][\w]{0,8}\s*=|[\s\-‐-―]*\(?\d+[a-z]?\)?\.?)$'
+)
+
+
+def _is_eq_adornment(text: str) -> bool:
+    bare = _TAG_STRIP_RE.sub('', text).strip()
+    return (not bare) or bool(_EQ_ADORNMENT_RE.match(bare))
+
+
 def _split_para_math(p):
     """
     Walk a paragraph's direct children in document order, separating plain
@@ -739,35 +766,60 @@ def _split_para_math(p):
     nothing is lost, regardless of how many equations or how much prose the
     paragraph mixes.
 
-    Returns (combined_text, omml_list, has_prose):
+    Returns (combined_text, omml_list, has_prose, eq_prefix, eq_suffix):
       combined_text — full paragraph text with each equation's content spliced
                        in place, using <sub>/<sup> tags for scripts (the same
                        convention _run_text_with_fmt uses for ordinary text)
       omml_list     — OMML XML string for every m:oMath found, in order
       has_prose     — True if any non-whitespace text exists outside the
-                       equations, i.e. this is prose with inline math rather
-                       than a standalone display equation
+                       equations that isn't just equation adornment (a short
+                       "variable =" lead-in or a "----(N)" number suffix) —
+                       i.e. this is prose with inline math rather than a
+                       standalone display equation
+      eq_prefix,      — the adornment text itself (if any), split by whether
+      eq_suffix         it appeared before or after the first equation, so a
+                        standalone equation can fold "D = " back onto the
+                        front of its rebuilt-from-OMML text/LaTeX instead of
+                        silently losing it (eq_text/eq_latex are rebuilt
+                        purely from omml_list, which never had it)
     """
     parts = []
     omml_list = []
     has_prose = False
+    # Adornment text (a "variable =" lead-in or a "----(N)" number suffix)
+    # collected separately from prose, split by whether it appears before
+    # or after the first m:oMath — eq_text/eq_latex are rebuilt purely
+    # from omml_list for a standalone equation, so this is what lets the
+    # caller fold "D = " back onto the front (not the back — appending a
+    # trailing "----(1)" to the wrong end would just mangle it the other
+    # way) of the exported equation instead of silently dropping it.
+    prefix_parts = []
+    suffix_parts = []
+    seen_omath = [False]
 
     def _handle_omath(om_el):
         omml_str = _etree.tostring(om_el, encoding='unicode').strip()
         omml_list.append(omml_str)
         parts.append(extract_equation_text(omml_str, html_sub_sup=True))
+        seen_omath[0] = True
 
     for child in p._element:
         tag = child.tag
         if tag == _W_R:
             run_text = _run_text_with_fmt(Run(child, p))
             if run_text.strip():
-                has_prose = True
+                if _is_eq_adornment(run_text):
+                    (suffix_parts if seen_omath[0] else prefix_parts).append(run_text)
+                else:
+                    has_prose = True
             parts.append(run_text)
         elif tag == _W_HYPERLINK:
             hlink_text = "".join(_run_text_with_fmt(Run(r, p)) for r in child.findall(_W_R))
             if hlink_text.strip():
-                has_prose = True
+                if _is_eq_adornment(hlink_text):
+                    (suffix_parts if seen_omath[0] else prefix_parts).append(hlink_text)
+                else:
+                    has_prose = True
             parts.append(hlink_text)
         elif tag == f"{_MATH_NS}oMath":
             _handle_omath(child)
@@ -776,7 +828,9 @@ def _split_para_math(p):
                 _handle_omath(om)
         # else: paragraph properties, proofErr markers, bookmarks, etc. — no text
 
-    return "".join(parts).strip(), omml_list, has_prose
+    eq_prefix = _TAG_STRIP_RE.sub('', "".join(prefix_parts)).strip()
+    eq_suffix = _TAG_STRIP_RE.sub('', "".join(suffix_parts)).strip()
+    return "".join(parts).strip(), omml_list, has_prose, eq_prefix, eq_suffix
 
 
 def _math_para_to_image(p) -> str:
