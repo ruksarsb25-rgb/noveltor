@@ -360,7 +360,22 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
             tbl = doc.tables[tbl_idx]
             tbl_idx += 1
             if phase == "body":
-                tbl_block = _table_to_block(tbl, tbl_idx)
+                # The caption paragraph ("Table N. Description...") always
+                # immediately precedes its table, and ordinary paragraph
+                # handling below has already appended it as a plain
+                # {"type": "paragraph"} block by the time we get here — pop
+                # it back off and use its text as the table's real caption
+                # instead of leaving it stranded as a floating paragraph
+                # next to a bare, description-less "Table N" label.
+                caption_text = ""
+                if current_section is not None:
+                    cap_target = (current_section["subsections"][-1]["content"]
+                                  if current_section["subsections"] else current_section["content"])
+                    if (cap_target and cap_target[-1].get("type") == "paragraph"
+                            and _TABLE_CAPTION_RE.match(cap_target[-1]["text"])):
+                        caption_text = _strip_fig_label(cap_target.pop()["text"])
+
+                tbl_block = _table_to_block(tbl, tbl_idx, caption_text)
                 if tbl_block:
                     if current_section is None:
                         current_section = _new_section("", "Other")
@@ -649,20 +664,45 @@ def _new_section(heading: str, sec_type: str) -> dict:
     return {"heading": heading, "type": sec_type, "content": [], "subsections": []}
 
 
-def _table_to_block(tbl, tbl_number: int) -> dict | None:
+def _table_to_block(tbl, tbl_number: int, caption_text: str = "") -> dict | None:
     """Convert a python-docx Table object to a content block dict."""
     if not tbl.rows:
         return None
-    headers = _row_cells(tbl.rows[0])
-    data_rows = [
-        _row_cells(r) for r in tbl.rows[1:]
-        if any(c.strip() for c in _row_cells(r))
-    ]
+
+    grid = [_row_cells(r) for r in tbl.rows]
+
+    # A genuine 2-row header — e.g. "Zone of inhibition" spanning two
+    # sub-columns "E. coli" / "B. cereus" underneath it — shows up as row 0
+    # and row 1 sharing identical text at whichever column(s) row 0's
+    # cell(s) span down into (a rowspan/vMerge cell like "Concentration"
+    # heading both rows), while at least one other column differs (row 1
+    # supplies a more specific leaf label row 0 only had a group heading
+    # for). Collapse the two into one correctly-aligned header row instead
+    # of leaving row 1 to be misread as an ordinary data row.
+    header_row_count = 1
+    if len(grid) >= 3:
+        row0, row1 = grid[0], grid[1]
+        if len(row0) == len(row1) and row0 != row1 and any(a == b and a.strip() for a, b in zip(row0, row1)):
+            header_row_count = 2
+
+    if header_row_count == 2:
+        row0, row1 = grid[0], grid[1]
+        # Same text in both rows -> row 0's own (spans both rows); else
+        # row 1's more specific label, falling back to row 0's if row 1
+        # is itself blank at that column.
+        headers = [b if (a != b and b.strip()) else a for a, b in zip(row0, row1)]
+        body_rows = grid[2:]
+    else:
+        headers = grid[0]
+        body_rows = grid[1:]
+
+    data_rows = [r for r in body_rows if any(c.strip() for c in r)]
+
     label = f"Table {tbl_number}"
     return {
         "type": "table",
         "label": label,
-        "caption": label,
+        "caption": caption_text or label,
         "headers": headers,
         "rows": data_rows,
     }
@@ -1495,14 +1535,20 @@ def _fallback_comma_split(line: str) -> list:
 
 
 def _row_cells(row) -> list:
-    """Return cell texts for a table row, skipping duplicate merged-cell references."""
-    seen  = set()
-    cells = []
-    for cell in row.cells:
-        cid = id(cell._tc)
-        if cid not in seen:
-            seen.add(cid)
-            cells.append(_cell_text_with_fmt(cell))
-    return cells
+    """Return one text per grid column for a table row — always the
+    table's full column count, never fewer.
+
+    python-docx's row.cells already expands merged cells to fill every
+    column they span (a colspan cell's Cell object repeats at each of its
+    columns; a rowspan continuation cell resolves to its origin cell's
+    text) — this used to then dedupe by underlying-XML-element identity,
+    which silently DROPPED every repeated position. For a table whose
+    header spans multiple columns/rows (very common — "Zone of
+    inhibition" over "E. coli"/"B. cereus" sub-columns), that shrank the
+    header row to fewer cells than the data rows have, misaligning every
+    column beneath it. Keeping the repeats here (handled by
+    _table_to_block, which collapses a genuine 2-row header into one
+    correctly-aligned row) is what keeps the grid intact."""
+    return [_cell_text_with_fmt(cell) for cell in row.cells]
 
 
