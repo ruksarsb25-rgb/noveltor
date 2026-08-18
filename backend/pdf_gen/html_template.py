@@ -339,11 +339,17 @@ def _render_table_block(tbl: dict) -> str:
     return t
 
 
-def _render_content_blocks(sec: dict) -> str:
+def _render_content_blocks(sec: dict, for_pdf: bool = True) -> str:
     """Render a section or subsection's content array as HTML (legacy, mixed layout).
 
     Handles both the new content-array format and the legacy body-string format
     so that hand-edited article dicts still render correctly.
+
+    for_pdf: this same HTML also gets downloaded directly as a standalone
+    .html file (/export/html) for opening in a browser — which, unlike
+    WeasyPrint, natively renders MathML properly. Pass False for that path
+    so equations get real typeset math instead of the PDF path's plain-text
+    fallback.
     """
     html = ""
     content = sec.get("content")
@@ -359,23 +365,32 @@ def _render_content_blocks(sec: dict) -> str:
             elif btype == "figure":
                 html += _render_figure_block(block)
             elif btype == "equation":
-                # WeasyPrint (the PDF renderer) has no MathML layout support at
-                # all — <mfrac>/<msub> just get flattened into run-together text
-                # with no separators (e.g. a fraction's numerator and denominator
-                # concatenated with no "/" between them). So for PDF, MathML is
-                # unusable regardless of how correct it is; prefer the plain-text
-                # extraction (readable, with real Unicode subscripts and "/") or
-                # the rendered image, and only fall back to MathML as a last
-                # resort in case a future WeasyPrint version adds support.
                 latex = block.get("latex", "").strip() if block.get("latex") else ""
                 mathml = block.get("mathml", "").strip() if block.get("mathml") else ""
                 text = block.get("text", "").strip() if block.get("text") else ""
                 label = block.get("label", "")
                 uri = block.get("data_uri", "")
 
+                if not for_pdf and mathml:
+                    # Standalone HTML opened in a browser: browsers render
+                    # MathML natively (proper stacked fractions, subscripts),
+                    # so it's strictly better than the plain-text fallback.
+                    # eq_prefix ("D = ", typed as plain text before the OMML
+                    # object) isn't part of the mathml itself — wrap it back
+                    # on so the variable the equation defines isn't lost.
+                    eq_prefix = (block.get("eq_prefix") or "").strip()
+                    eq_suffix = (block.get("eq_suffix") or "").strip()
+                    prefix_html = f'{_e(eq_prefix)} ' if eq_prefix else ''
+                    suffix_html = f' {_e(eq_suffix)}' if eq_suffix else ''
+                    html += f'<div class="equation mathml-equation">{prefix_html}{mathml}{suffix_html}</div>'
                 # Priority 1: Plain text representation (selectable/copyable,
-                # correctly shows fractions and subscripts as Unicode)
-                if text:
+                # correctly shows fractions and subscripts as Unicode) — the
+                # PDF path's first choice, since WeasyPrint has no MathML
+                # layout support at all (<mfrac>/<msub> just flatten into
+                # run-together text with no separators between numerator and
+                # denominator), making MathML unusable there regardless of
+                # how correct it is.
+                elif text:
                     safe_text = _e(text)
                     label_str = f"<strong>{_e(label)}:</strong> " if label else "<strong>Equation:</strong> "
                     html += f'<div class="equation">{label_str}{safe_text}</div>'
@@ -387,7 +402,8 @@ def _render_content_blocks(sec: dict) -> str:
                     safe_latex = _e(latex)
                     html += f'<div class="equation latex-equation">$$\n{safe_latex}\n$$</div>'
                 # Priority 4: MathML — WeasyPrint can't lay this out, kept only
-                # as a last resort when nothing else is available.
+                # as a last resort when nothing else is available (for_pdf
+                # path only; the for_pdf=False path already used it above).
                 elif mathml:
                     html += f'<div class="equation mathml-equation">{mathml}</div>'
                 else:
@@ -403,7 +419,7 @@ def _render_content_blocks(sec: dict) -> str:
     return html
 
 
-def build_html(article: dict, two_col: bool = False) -> str:
+def build_html(article: dict, two_col: bool = False, for_pdf: bool = True) -> str:
     authors      = article.get("authors") or []
     journal_name = (article.get("journal_name") or "Novel Future Proceedings").strip()
     article_type = article.get("article_type") or "Research Article"
@@ -553,13 +569,13 @@ def build_html(article: dict, two_col: bool = False) -> str:
         sec_html = '<div class="body-section">'
         if heading:
             sec_html += f'<div class="section-heading">{_e_fmt(heading)}</div>'
-        sec_html += _render_content_blocks(sec)
+        sec_html += _render_content_blocks(sec, for_pdf=for_pdf)
         for sub in subsecs:
             sh = (sub.get("heading") or "").strip()
             sec_html += '<div class="subsection">'
             if sh:
                 sec_html += f'<div class="subsection-heading">{_e_fmt(sh)}</div>'
-            sec_html += _render_content_blocks(sub)
+            sec_html += _render_content_blocks(sub, for_pdf=for_pdf)
             sec_html += "</div>"
         sec_html += "</div>"
         body_parts.append(sec_html)

@@ -405,7 +405,10 @@ def export_html():
     try:
         from pdf_gen.html_template import build_html
 
-        html_str = build_html(data)
+        # for_pdf=False: this file gets opened directly in a browser, which
+        # (unlike WeasyPrint) renders MathML natively — so equations get
+        # real typeset math instead of the PDF path's plain-text fallback.
+        html_str = build_html(data, for_pdf=False)
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
         resp = make_response(html_str.encode("utf-8"))
         resp.headers["Content-Type"] = "text/html; charset=utf-8"

@@ -446,7 +446,16 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                         "mathml": mathml if mathml else None,
                         "text": eq_text if eq_text else None,  # Extracted text with proper subscripts
                         "latex": eq_latex if eq_latex else None,  # Real LaTeX math (\frac, \beta, …) for /export/pdf-latex
-                        "data_uri": data_uri if data_uri else None
+                        "data_uri": data_uri if data_uri else None,
+                        # Raw (unfolded) lead-in/suffix, for consumers that
+                        # render "mathml" directly rather than "text"/"latex"
+                        # (which already have these folded in) and need to
+                        # wrap the typeset math with them separately — the
+                        # suffix is usually already inside the OMML/mathml
+                        # itself when it's a trailing m:r inside m:oMath, so
+                        # this is normally only needed for eq_prefix.
+                        "eq_prefix": eq_prefix if eq_prefix else None,
+                        "eq_suffix": eq_suffix if eq_suffix else None,
                     })
             continue
 
