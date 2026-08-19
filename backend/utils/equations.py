@@ -433,6 +433,45 @@ def _latex_escape_text(text: str) -> str:
     return text
 
 
+_LATEX_FUNC_NAMES_BY_LEN = sorted(_LATEX_FUNC_NAMES, key=len, reverse=True)
+
+
+def _convert_mixed_math_text(raw: str) -> str:
+    """Convert a single OMML text run that mixes Greek letters/operators
+    with a known function name and no spaces — e.g. "βcosθ" (a very common
+    compact physics notation: FWHM(β) times cos(theta), typed as one run)
+    — into valid LaTeX math-mode tokens.
+
+    This exists because the caller's "is this a prose label?" check keys
+    off finding 2+ consecutive Latin letters, which "cos" inside "βcosθ"
+    satisfies — but the run isn't prose, it's still math. Wrapping it in
+    \\text{} as if it were leaves the raw, un-mapped β/θ characters sitting
+    inside a text-mode argument, which pdflatex can't compile without full
+    Unicode math support ("Unicode character β (U+03B2) not set up for use
+    with LaTeX"). Blindly mapping β→\\beta and splicing it directly next to
+    "cos" isn't safe either — adjacent control-word macros with no
+    separator merge into one undefined macro name ("\\betacos"), the exact
+    failure mode join_children()'s space-joining already guards against
+    for separate elements — so each token gets a trailing space here too.
+    """
+    out = []
+    i, n = 0, len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch in _LATEX_SYMBOL_MAP:
+            out.append(_LATEX_SYMBOL_MAP[ch] + ' ')
+            i += 1
+            continue
+        matched = next((f for f in _LATEX_FUNC_NAMES_BY_LEN if raw.startswith(f, i)), None)
+        if matched:
+            out.append('\\' + matched + ' ')
+            i += len(matched)
+            continue
+        out.append(ch)  # plain Latin letter/digit/punctuation — safe as-is in math mode
+        i += 1
+    return ''.join(out).strip()
+
+
 def omml_to_latex(omml_str: str) -> str:
     """
     Convert OMML (Office Math Markup Language) to a LaTeX math expression
@@ -481,8 +520,18 @@ def omml_to_latex(omml_str: str) -> str:
                 if stripped in _LATEX_FUNC_NAMES:
                     return raw.replace(stripped, '\\' + stripped, 1)
                 if _LATEX_WORD_RE.search(raw):
-                    # Prose label — render upright via \text{} so LaTeX
-                    # doesn't italicize/space it like a run of variables.
+                    if any(c in _LATEX_SYMBOL_MAP for c in raw):
+                        # Not prose — a compact notation mixing Greek/
+                        # operator characters with a function name and no
+                        # spaces (e.g. "βcosθ"). Wrapping the whole thing
+                        # in \text{} would leave the raw, un-mapped Greek
+                        # character sitting inside a text-mode argument,
+                        # which pdflatex can't compile without full
+                        # Unicode math support.
+                        return _convert_mixed_math_text(raw)
+                    # Genuine prose label — render upright via \text{} so
+                    # LaTeX doesn't italicize/space it like a run of
+                    # variables.
                     return r'\text{' + _latex_escape_text(raw) + '}'
                 # A math symbol, digit, or operator — safe to leave in math
                 # mode directly once Unicode symbols are mapped to macros.
