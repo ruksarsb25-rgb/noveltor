@@ -414,13 +414,22 @@ class LaTeXGenerator:
         if author_chunks:
             parts.append(", ".join(author_chunks) + "\\par\\smallskip\n\n")
 
-        # Affiliations — numbered only when there's more than one
+        # Affiliations — numbered only when there's more than one. Joined
+        # with \\ (a line break) inside ONE {\footnotesize ...} group
+        # instead of \par-separating each entry: \par starts a new
+        # paragraph, which picks up the full \parskip (set globally in the
+        # preamble) between every single affiliation — for six-plus
+        # affiliations, several wrapping to two lines, that reads as a lot
+        # of dead vertical space. \footnotesize (down from \small) also
+        # shrinks how often a long institutional address wraps at all.
         if affils:
             aff_lines = []
             for i, aff in enumerate(affils, 1):
                 prefix = f"\\textsuperscript{{{i}}}\\," if multi_affil else ""
-                aff_lines.append(f"{{\\small {prefix}{self.escape_latex(aff)}}}")
-            parts.append("\\par ".join(aff_lines) + "\\par\\smallskip\n\n")
+                aff_lines.append(f"{prefix}{self.escape_latex(aff)}")
+            parts.append(
+                "{\\footnotesize " + "\\\\[1pt]\n".join(aff_lines) + "}\\par\\smallskip\n\n"
+            )
 
         # Corresponding author email(s)
         corresp_emails = [a.get("email") for a in self.authors if a.get("corresponding") and a.get("email")]
