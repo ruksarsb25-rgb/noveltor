@@ -378,6 +378,18 @@ _LATEX_SYMBOL_MAP = {
     '⁡': '', '⁢': '', '⁣': '', '⁤': '',
 }
 
+# LaTeX-special ASCII characters that can appear literally in equation text
+# (e.g. "% D" for "percent decolorization efficiency") but are never valid
+# unescaped in the generated .tex source. "%" is the sharpest edge here:
+# left raw, it starts a LaTeX *comment* running to the end of the line,
+# silently deleting the rest of the equation from the compiled output —
+# not a compile error, just an equation that looks "completely skipped".
+# Kept separate from _LATEX_SYMBOL_MAP rather than merged into it:
+# latex_converter.py imports that map too, to wrap genuine Greek/operator
+# characters in $...$ for plain prose — running that same treatment on an
+# already-escaped "\%" would double-wrap it into the broken "\$\%$".
+_LATEX_ASCII_ESCAPES = {'%': r'\%', '#': r'\#', '&': r'\&'}
+
 # Standard LaTeX "log-like" math operators (upright, correctly spaced) — a
 # bare OMML text run matching one of these exactly becomes \cos, \sin, etc.
 # instead of being left to render as italicized single letters.
@@ -417,7 +429,7 @@ def _normalize_math_alphanumerics(text: str) -> str:
 def _latex_symbols(text: str) -> str:
     """Apply the Unicode→LaTeX macro table character by character."""
     text = _normalize_math_alphanumerics(text)
-    return ''.join(_LATEX_SYMBOL_MAP.get(c, c) for c in text)
+    return ''.join(_LATEX_SYMBOL_MAP.get(c, _LATEX_ASCII_ESCAPES.get(c, c)) for c in text)
 
 
 def _latex_escape_text(text: str) -> str:
@@ -466,6 +478,10 @@ def _convert_mixed_math_text(raw: str) -> str:
         if matched:
             out.append('\\' + matched + ' ')
             i += len(matched)
+            continue
+        if ch in _LATEX_ASCII_ESCAPES:
+            out.append(_LATEX_ASCII_ESCAPES[ch])
+            i += 1
             continue
         out.append(ch)  # plain Latin letter/digit/punctuation — safe as-is in math mode
         i += 1
