@@ -657,24 +657,26 @@ class LaTeXGenerator:
             if not text:
                 continue
 
-            # A DOI already visible as literal text in the reference
-            # doesn't need a second, separate link — escape_latex's own
-            # bare-URL handling already turns that into a clickable
-            # \url{} on its own. Otherwise, append a link using whatever
-            # is known: the DOI (from the source manuscript, or from the
-            # "Enrich DOIs" Crossref lookup) if there is one, else a
-            # Google Scholar search built from the citation text itself.
-            # Mirrors the WeasyPrint template's CrossRef/Google Scholar
-            # badges — without this, a reference enriched with a DOI only
-            # ever showed it in the WeasyPrint PDF and JATS XML, never
-            # here, which is what "enrichment isn't working" actually was.
-            link = ""
+            # Google Scholar search link always shown (built from the
+            # citation text itself, so it works even with no DOI at all),
+            # plus a CrossRef DOI link too whenever a DOI is known — from
+            # the source manuscript, or from the "Enrich DOIs" Crossref
+            # lookup (run automatically during export for any reference
+            # nobody enriched by hand — see _enrich_references_with_dois
+            # in app.py) — and isn't already visible as literal text in
+            # the reference (escape_latex's own bare-URL handling already
+            # turns that into a clickable \url{} on its own, so a second,
+            # identical link would be redundant). Mirrors the WeasyPrint
+            # template's CrossRef/Google Scholar badges, which show both
+            # together the same way — without this, a reference enriched
+            # with a DOI only ever showed it in the WeasyPrint PDF and
+            # JATS XML, never here, which is what "enrichment isn't
+            # working" actually was.
+            from urllib.parse import quote as _quote
+            gs_url = f"https://scholar.google.com/scholar?q={_quote(text[:300])}"
+            link = f" [\\href{{{gs_url}}}{{Google Scholar}}]"
             if doi and doi not in text:
-                link = f" [\\href{{https://doi.org/{doi}}}{{CrossRef}}]"
-            elif not doi:
-                from urllib.parse import quote as _quote
-                gs_url = f"https://scholar.google.com/scholar?q={_quote(text[:300])}"
-                link = f" [\\href{{{gs_url}}}{{Google Scholar}}]"
+                link += f" [\\href{{https://doi.org/{doi}}}{{CrossRef}}]"
 
             # \label{cite:N} gives in-text "[N]" citations (turned into
             # \hyperref[cite:N]{...} links by escape_latex's citation

@@ -312,6 +312,13 @@ def export_web_zip():
     if not data:
         return jsonify({"error": "No JSON body provided"}), 400
     try:
+        # Auto-enrich any reference nobody enriched by hand — no delay
+        # here (unlike the manual /enrich-refs button) so an export with
+        # a long reference list isn't held up by politeness sleeps on top
+        # of what's already several network round trips.
+        if data.get("references"):
+            data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
         from pdf_gen.html_web_template import build_web_html
         html_str = build_web_html(data)
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
@@ -342,6 +349,13 @@ def export_xml_zip():
     if not data:
         return jsonify({"error": "No JSON body provided"}), 400
     try:
+        # Auto-enrich any reference nobody enriched by hand — no delay
+        # here (unlike the manual /enrich-refs button) so an export with
+        # a long reference list isn't held up by politeness sleeps on top
+        # of what's already several network round trips.
+        if data.get("references"):
+            data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
         from jats.generator import generate_jats, fig_filename, eq_filename, detect_image_ext
 
         xml_str = generate_jats(data)
@@ -403,6 +417,13 @@ def export_html():
         return jsonify({"error": "No JSON body provided"}), 400
 
     try:
+        # Auto-enrich any reference nobody enriched by hand — no delay
+        # here (unlike the manual /enrich-refs button) so an export with
+        # a long reference list isn't held up by politeness sleeps on top
+        # of what's already several network round trips.
+        if data.get("references"):
+            data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
         from pdf_gen.html_template import build_html
 
         # for_pdf=False: this file gets opened directly in a browser, which
@@ -425,6 +446,13 @@ def export_pdf():
         return jsonify({"error": "No JSON body provided"}), 400
 
     try:
+        # Auto-enrich any reference nobody enriched by hand — no delay
+        # here (unlike the manual /enrich-refs button) so an export with
+        # a long reference list isn't held up by politeness sleeps on top
+        # of what's already several network round trips.
+        if data.get("references"):
+            data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
         from pdf_gen.html_template import build_html
         from pdf_gen.renderer import render_pdf
 
@@ -933,6 +961,13 @@ def export_pdf_latex():
         return jsonify({"error": "No JSON body provided"}), 400
 
     try:
+        # Auto-enrich any reference nobody enriched by hand — no delay
+        # here (unlike the manual /enrich-refs button) so an export with
+        # a long reference list isn't held up by politeness sleeps on top
+        # of what's already several network round trips.
+        if data.get("references"):
+            data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
         from utils.pdf_latex import generate_pdf_from_latex
 
         pdf_bytes = generate_pdf_from_latex(data)
@@ -1233,27 +1268,37 @@ def format_refs():
     return jsonify({"refs": enriched, "formatted": formatted})
 
 
-@app.route("/enrich-refs", methods=["POST"])
-def enrich_refs():
+def _enrich_references_with_dois(refs: list, delay: float = 0.12) -> tuple:
     """
-    For each reference that has no DOI, query the Crossref API using the
-    raw_text as a bibliographic search string. Returns the same refs list
-    with doi fields filled in where a confident match was found.
+    For each reference that has no DOI, query the Crossref API using its
+    raw_text as a bibliographic search string, filling in doi where a
+    confident match (Crossref score > 50) is found. Shared by the manual
+    "Enrich DOIs" button (/enrich-refs) and every article export route,
+    so a reference nobody enriched by hand still gets a shot at showing a
+    real DOI/CrossRef link instead of only the Google Scholar fallback.
+
+    delay: seconds to sleep between Crossref requests (politeness — their
+    polite-pool guidance is generous, but this avoids bursting many
+    requests at once). Exports pass a smaller delay than the manual
+    button's default, trading a little of that politeness margin for not
+    keeping someone waiting on an export for a manuscript with a long
+    reference list.
+
+    Returns (enriched_refs, found_count).
     """
     import requests as _req
     import time
 
-    data = request.get_json(force=True)
-    if not data or "refs" not in data:
-        return jsonify({"error": "Expected JSON body with 'refs' key"}), 400
-
-    refs = data["refs"]
     enriched = []
     found = 0
 
     for ref in refs:
-        raw_text = ref.get("raw_text", "").strip()
-        existing_doi = ref.get("doi", "").strip()
+        if not isinstance(ref, dict):
+            enriched.append(ref)
+            continue
+
+        raw_text = (ref.get("raw_text") or "").strip()
+        existing_doi = (ref.get("doi") or "").strip()
 
         # Already has DOI — skip Crossref lookup
         if existing_doi:
@@ -1286,12 +1331,27 @@ def enrich_refs():
                 found += 1
             enriched.append(new_ref)
 
-            # Be polite to Crossref — 10 req/s max
-            time.sleep(0.12)
+            if delay:
+                time.sleep(delay)
 
         except Exception:
             enriched.append(ref)
 
+    return enriched, found
+
+
+@app.route("/enrich-refs", methods=["POST"])
+def enrich_refs():
+    """
+    For each reference that has no DOI, query the Crossref API using the
+    raw_text as a bibliographic search string. Returns the same refs list
+    with doi fields filled in where a confident match was found.
+    """
+    data = request.get_json(force=True)
+    if not data or "refs" not in data:
+        return jsonify({"error": "Expected JSON body with 'refs' key"}), 400
+
+    enriched, found = _enrich_references_with_dois(data["refs"])
     return jsonify({"refs": enriched, "found": found})
 
 
