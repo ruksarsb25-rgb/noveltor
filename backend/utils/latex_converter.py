@@ -96,12 +96,15 @@ _SUP_MAP = {
 _SUB_RUN_RE = re.compile('[' + ''.join(_SUB_MAP) + ']+')
 _SUP_RUN_RE = re.compile('[' + ''.join(_SUP_MAP) + ']+')
 
-# Manuscript headings/table captions already carry the author's own number
-# (e.g. "3.2 SEM analysis", "Table 2. Crystallite size..."), but LaTeX's
-# \section{}/\subsection{}/\caption{} also auto-number — left alone, both
-# fire and the number prints twice ("3.2 3.2 SEM analysis", "Table 2: Table
-# 2"). Strip the author's leading number so only LaTeX's own numbering shows.
-_LEADING_HEADING_NUM_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+')
+# Manuscript table/figure captions already carry the author's own number
+# ("Table 2. Crystallite size..."), but LaTeX's \caption{} also
+# auto-numbers — left alone, both fire and the number prints twice
+# ("Table 2: Table 2"). Strip the author's leading number so only LaTeX's
+# own numbering shows. (Section headings are handled differently — see
+# format_section() — since \section{}'s own counter can't be taught every
+# case where the manuscript's numbering doesn't start at 1 or skips
+# unnumbered front-matter headings, so those are printed unnumbered with
+# the manuscript's heading text, number included, kept verbatim instead.)
 _LEADING_TABLE_LABEL_RE = re.compile(r'^table\s+\d+\s*[:.]?\s*', re.IGNORECASE)
 _LEADING_FIG_LABEL_RE = re.compile(r'^fig(?:ure)?\.?\s*\d+\s*[:.]?\s*', re.IGNORECASE)
 
@@ -259,6 +262,19 @@ class LaTeXGenerator:
         if not text:
             return ""
         text = str(text)
+
+        # Undo the docx parser's own HTML-escaping (_run_text_with_fmt
+        # escapes every run's text so it's safe to wrap in <sub>/<sup>
+        # HTML tags — correct for the WeasyPrint/web HTML path, which
+        # un-escapes it again when the browser parses the markup, but
+        # this LaTeX path never does, so a plain "&" in the manuscript
+        # arrives here as the literal 5-character string "&amp;" and gets
+        # printed as exactly that in the compiled PDF instead of "&").
+        # Must run before anything else — the sub/sup tags themselves are
+        # real, un-escaped "<"/">" characters (added after escaping the
+        # run's own text, not html.escape()'d themselves), so this can't
+        # collide with them.
+        text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
 
         # 0. Bare URLs must be pulled out and wrapped in \url{} (verbatim)
         #    *before* anything below touches them — general escaping would
@@ -468,15 +484,22 @@ class LaTeXGenerator:
 
         heading = section.get("heading", "").strip()
         if heading:
-            # Strip the manuscript's own leading number ("3.2 SEM analysis"
-            # -> "SEM analysis") — \section/\subsection add their own.
-            heading = _LEADING_HEADING_NUM_RE.sub('', heading)
+            # Starred (unnumbered) commands with the manuscript's own
+            # heading text kept verbatim, numbering and all — LaTeX's own
+            # \section/\subsection counters don't know the manuscript
+            # skips numbers for some headings (e.g. "Highlights",
+            # "Graphical Abstract" before "1. Introduction") or restarts
+            # per-subsection, so auto-numbering silently drifts away from
+            # what the author actually wrote (observed: "1. Introduction"
+            # rendering as "3 Introduction"). Printing exactly what's
+            # there sidesteps that entirely instead of trying to teach the
+            # counter every exception.
             if depth == 1:
-                latex += f"\\section{{{self.escape_latex(heading)}}}\n\n"
+                latex += f"\\section*{{{self.escape_latex(heading)}}}\n\n"
             elif depth == 2:
-                latex += f"\\subsection{{{self.escape_latex(heading)}}}\n\n"
+                latex += f"\\subsection*{{{self.escape_latex(heading)}}}\n\n"
             else:
-                latex += f"\\subsubsection{{{self.escape_latex(heading)}}}\n\n"
+                latex += f"\\subsubsection*{{{self.escape_latex(heading)}}}\n\n"
 
         # Process content blocks
         content = section.get("content", [])
@@ -626,14 +649,37 @@ class LaTeXGenerator:
         for i, ref in enumerate(self.references, 1):
             if isinstance(ref, dict):
                 text = ref.get("raw_text") or ref.get("text", "")
+                doi = (ref.get("doi") or "").strip()
             else:
                 text = str(ref)
+                doi = ""
 
-            if text:
-                # \label{cite:N} gives in-text "[N]" citations (turned into
-                # \hyperref[cite:N]{...} links by escape_latex's citation
-                # handling) something to jump to.
-                latex += f"\\bibitem{{{i}}}\\label{{cite:{i}}} {self.escape_latex(text)}\n\n"
+            if not text:
+                continue
+
+            # A DOI already visible as literal text in the reference
+            # doesn't need a second, separate link — escape_latex's own
+            # bare-URL handling already turns that into a clickable
+            # \url{} on its own. Otherwise, append a link using whatever
+            # is known: the DOI (from the source manuscript, or from the
+            # "Enrich DOIs" Crossref lookup) if there is one, else a
+            # Google Scholar search built from the citation text itself.
+            # Mirrors the WeasyPrint template's CrossRef/Google Scholar
+            # badges — without this, a reference enriched with a DOI only
+            # ever showed it in the WeasyPrint PDF and JATS XML, never
+            # here, which is what "enrichment isn't working" actually was.
+            link = ""
+            if doi and doi not in text:
+                link = f" [\\href{{https://doi.org/{doi}}}{{CrossRef}}]"
+            elif not doi:
+                from urllib.parse import quote as _quote
+                gs_url = f"https://scholar.google.com/scholar?q={_quote(text[:300])}"
+                link = f" [\\href{{{gs_url}}}{{Google Scholar}}]"
+
+            # \label{cite:N} gives in-text "[N]" citations (turned into
+            # \hyperref[cite:N]{...} links by escape_latex's citation
+            # handling) something to jump to.
+            latex += f"\\bibitem{{{i}}}\\label{{cite:{i}}} {self.escape_latex(text)}{link}\n\n"
 
         latex += "\\end{thebibliography}\n"
         return latex

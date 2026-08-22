@@ -227,14 +227,17 @@ def _extract_latex_blocks(text: str) -> list:
 
 
 def _collect_fig_captions(doc) -> dict:
-    """Pre-scan entire document and return {fig_number (int): caption_text}.
+    """Pre-scan entire document and return
+    {fig_number (int): (caption_text, paragraph_index)}.
 
     Prefers true caption lines (e.g. 'Fig. 2. SEM micrographs...') over
-    body-text references (e.g. 'Fig. 2 presents the SEM...').
+    body-text references (e.g. 'Fig. 2 presents the SEM...'). The
+    paragraph_index lets _resolve_orphan_figure_captions() pair a caption
+    with the correct nearby image when it isn't directly adjacent to any.
     """
-    captions: dict[int, tuple[int, str]] = {}  # num → (priority, text); priority 0=caption,1=ref
+    captions: dict[int, tuple[int, str, int]] = {}  # num → (priority, text, para_idx)
 
-    for p in doc.paragraphs:
+    for i, p in enumerate(doc.paragraphs):
         text = p.text.strip()
         m = _FIG_CAPTION_FULL.match(text)
         if not m:
@@ -245,20 +248,96 @@ def _collect_fig_captions(doc) -> dict:
 
         existing = captions.get(num)
         if existing is None:
-            captions[num] = (priority, text)
+            captions[num] = (priority, text, i)
         else:
-            ex_pri, ex_text = existing
+            ex_pri, ex_text, ex_idx = existing
             # Prefer lower priority (real caption over body ref); break ties by length
             if priority < ex_pri or (priority == ex_pri and len(text) > len(ex_text)):
-                captions[num] = (priority, text)
+                captions[num] = (priority, text, i)
 
-    return {num: text for num, (_, text) in captions.items()}
+    return {num: (text, idx) for num, (_, text, idx) in captions.items()}
+
+
+def _fig_caption_near(paras: list, i: int) -> str:
+    """The caption/skip-label text directly adjacent to image paragraph i
+    (its own paragraph, or the next up-to-3 non-blank paragraphs) if any,
+    else ''. Shared by _resolve_orphan_figure_captions() and (implicitly,
+    via the same shape of check) the main loop's own inline lookahead."""
+    text = paras[i].text.strip()
+    if text and (_FIG_CAPTION_RE.match(text) or _SKIP_FIG_RE.match(text)):
+        return text
+    j, steps = i + 1, 0
+    while j < len(paras) and steps < 3:
+        nxt = paras[j].text.strip()
+        if nxt:
+            return nxt if (_FIG_CAPTION_RE.match(nxt) or _SKIP_FIG_RE.match(nxt)) else ''
+        j += 1
+        steps += 1
+    return ''
+
+
+def _resolve_orphan_figure_captions(doc, fig_captions: dict) -> dict:
+    """Pair images with no 'Figure N. ...' caption directly adjacent to
+    them (see _fig_caption_near) with pre-scanned captions that aren't
+    directly adjacent to *any* image, preferring the closest available
+    image-caption pair by paragraph distance across the whole document.
+
+    Exists for manuscripts where a large intervening table or page break
+    pushes a caption many paragraphs away from its own image — farther
+    than any small fixed window could safely assume without also risking
+    a closer, unrelated orphan grabbing a caption that isn't really
+    theirs. Matching happens globally (every orphan against every
+    unclaimed caption at once) specifically to avoid that: a caption 16
+    paragraphs from its real image but 40 from an unrelated one still
+    correctly prefers the real one.
+
+    Returns {image_paragraph_index (int): caption_text (str)}.
+    """
+    paras = doc.paragraphs
+
+    orphan_idxs = [
+        i for i, p in enumerate(paras)
+        if _has_image(p._element) and not _fig_caption_near(paras, i)
+    ]
+    if not orphan_idxs:
+        return {}
+
+    claimed_numbers = set()
+    for i, p in enumerate(paras):
+        if not _has_image(p._element) or i in orphan_idxs:
+            continue
+        near = _fig_caption_near(paras, i)
+        m = _FIG_CAPTION_FULL.match(near) if near else None
+        if m:
+            claimed_numbers.add(int(m.group(1)))
+
+    unclaimed = {n: pos for n, (_text, pos) in fig_captions.items() if n not in claimed_numbers}
+    if not unclaimed:
+        return {}
+
+    # Greedy nearest-match: repeatedly take the globally closest remaining
+    # (orphan image, unclaimed caption) pair, assign it, and remove both
+    # from further consideration.
+    assignment: dict[int, str] = {}
+    remaining_orphans = list(orphan_idxs)
+    remaining_captions = dict(unclaimed)
+    while remaining_orphans and remaining_captions:
+        best = min(
+            ((abs(pos - oi), oi, num) for oi in remaining_orphans for num, pos in remaining_captions.items()),
+        )
+        _, oi, num = best
+        assignment[oi] = _strip_fig_label(fig_captions[num][0])
+        remaining_orphans.remove(oi)
+        del remaining_captions[num]
+
+    return assignment
 
 
 def parse_docx(file_path: str) -> dict:
     doc = Document(file_path)
 
     fig_captions = _collect_fig_captions(doc)
+    orphan_fig_captions = _resolve_orphan_figure_captions(doc, fig_captions)
 
     state = {
         "title": "",
@@ -270,7 +349,7 @@ def parse_docx(file_path: str) -> dict:
         "figures": [],
     }
 
-    _extract_structure(doc, state, fig_captions)
+    _extract_structure(doc, state, fig_captions, orphan_fig_captions)
 
     return {
         "title": state["title"],
@@ -305,8 +384,12 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
     m = _NUMBERED_HEADING_RE.match(text)
     if m:
         sub_part = m.group(2)  # everything between first digit and the space
-        # If there are digits after the first number (e.g. ".1", ".2.3"), it's a subsection
-        has_sub = bool(re.search(r'\d', sub_part))
+        # A non-zero digit after the first number (".1", ".2.3") means a
+        # real subsection. A trailing ".0" ("3.0 Results and discussion")
+        # is just a stylistic zero-suffix some manuscripts use for a
+        # top-level section, not a first subsection — re.search(r'\d')
+        # alone can't tell those apart, since "0" is still a digit.
+        has_sub = bool(re.search(r'[1-9]', sub_part))
         return "h3" if has_sub else "h2"
 
     if style == "Heading 1":
@@ -330,7 +413,7 @@ def _classify_heading(text: str, style: str, is_bold: bool = False) -> str | Non
     return None
 
 
-def _extract_structure(doc, state: dict, fig_captions: dict = None):
+def _extract_structure(doc, state: dict, fig_captions: dict = None, orphan_fig_captions: dict = None):
     """
     State-machine pass over body elements in document order (paragraphs and tables).
     Phases: pre_title → authors → abstract → body → refs
@@ -340,6 +423,8 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
     """
     if fig_captions is None:
         fig_captions = {}
+    if orphan_fig_captions is None:
+        orphan_fig_captions = {}
     phase = "pre_title"
     current_section = None
     authors_raw_lines = []
@@ -524,10 +609,36 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None):
                 target.append(skip_block)
                 continue
 
+            # Fall back to the pre-resolved orphan-image pairing (see
+            # _resolve_orphan_figure_captions) if still no caption found
+            # nearby — it already worked out, globally across the whole
+            # document, which uncaptioned image each otherwise-unclaimed
+            # caption really belongs to (para_idx - 1 is p's own index;
+            # see the p = doc.paragraphs[para_idx]; para_idx += 1 above).
+            # A naive "next caption number" guess here would instead let a
+            # stray uncaptioned image earlier in the doc grab a later
+            # image's real caption, pushing every figure after it one
+            # number off from what the manuscript actually says.
+            if not caption:
+                caption = orphan_fig_captions.get(para_idx - 1, "")
+
+            if not caption:
+                # Genuinely no discoverable caption anywhere near this
+                # image — treat it like a skip image (included, but not
+                # part of the numbered Figure-N sequence) instead of
+                # consuming a slot that then leaves every real figure
+                # after it numbered one higher than the manuscript itself
+                # says.
+                orphan_block = _build_figure_block(p, doc, 0, "")
+                orphan_block.update({"id": "", "label": "Image", "href": ""})
+                if current_section is None:
+                    current_section = _new_section("", "Other")
+                target = (current_section["subsections"][-1]["content"]
+                          if current_section["subsections"] else current_section["content"])
+                target.append(orphan_block)
+                continue
+
             fig_counter += 1
-            # Fall back to the pre-scanned caption map if still no caption found
-            if not caption and fig_counter in fig_captions:
-                caption = _strip_fig_label(fig_captions[fig_counter])
             fig_block = _build_figure_block(p, doc, fig_counter, caption)
             state["figures"].append({k: fig_block[k] for k in ("id", "label", "caption", "href")})
             if current_section is None:
