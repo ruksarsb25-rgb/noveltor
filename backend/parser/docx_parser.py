@@ -1529,6 +1529,14 @@ def _parse_authors(raw: str) -> list:
     if not authors:
         return [_empty_author()]
 
+    # A single-author manuscript often has no "*"/"corresponding author"
+    # marker at all — there's only one author, so who else would be
+    # corresponding? Without this, a found email address (from
+    # _find_corresp_emails's own "any email anywhere in the block"
+    # fallback) never gets assigned to anyone and is silently lost.
+    if len(authors) == 1 and not authors[0]["corresponding"] and corresp_emails:
+        authors[0]["corresponding"] = True
+
     # Assign affiliations and emails
     email_idx = 0
     for author in authors:
@@ -1662,13 +1670,28 @@ def _split_name(name: str) -> tuple:
 
 
 def _build_affil_map(lines: list) -> dict:
-    """Build {number_str: affiliation_text} from lines like '¹Department of…'"""
+    """Build {number_str: affiliation_text} from lines like '¹Department of…'.
+
+    An address that wraps onto its own paragraph in the source (no
+    leading number, e.g. "Constituent College of Kuvempu University,
+    Shivamogga-577 203, Karnataka, India" right after "1Department of
+    Studies & Research in Chemistry, Sahyadri Science College") is
+    appended to the most recently seen affiliation instead of being
+    silently dropped — as long as it isn't itself a corresponding-author
+    marker or a bare email line, which belong to a different part of the
+    author block, not the affiliation text.
+    """
     affil_map = {}
+    last_num = None
     for line in lines:
         m = re.match(r'^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d+)\s*(.+)$', line)
         if m:
             num = m.group(1).translate(_SUP_TO_NUM)
             affil_map[num] = m.group(2).strip()
+            last_num = num
+        elif (last_num is not None and line.strip()
+              and not _CORRESP_LINE_RE.search(line) and not _EMAIL_RE.search(line)):
+            affil_map[last_num] += ' ' + line.strip()
     return affil_map
 
 
