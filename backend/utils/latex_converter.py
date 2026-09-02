@@ -10,16 +10,6 @@ from typing import Dict, List, Any
 
 from utils.equations import _LATEX_SYMBOL_MAP, _normalize_math_alphanumerics
 
-# Article-type badge labels — same mapping as the WeasyPrint template
-# (_TYPE_LABELS in html_template.py) so both PDFs show the same text.
-_TYPE_LABELS = {
-    "Research Article":        "RESEARCH ARTICLE",
-    "Review":                  "REVIEW ARTICLE",
-    "Conference Proceeding":   "CONFERENCE PROCEEDING",
-    "Enhanced Poster Abstract": "ENHANCED POSTER ABSTRACT",
-    "Conference Report":       "CONFERENCE REPORT",
-}
-
 # HTML tags the rest of the app uses for inline formatting: <sub>/<sup> from
 # the DOCX parser (chemical formulas, citation numbers), <strong>/<em> from
 # the Sections screen's Bold/Italic toolbar. escape_latex() must convert
@@ -385,16 +375,16 @@ class LaTeXGenerator:
         html_template.py) so both PDFs show the same information.
         """
         article_type = self.article.get("article_type") or "Research Article"
-        type_label = _TYPE_LABELS.get(article_type, article_type.upper())
 
         parts = []
 
-        # Badges — left, above the centered title block below
+        # Article type / Open Access — plain italic Title Case text, no
+        # colored badge box, matching the understated label style used by
+        # journals like MDPI ("Article" in italic above the title) rather
+        # than a bold solid-color pill.
         parts.append(
             "\\noindent"
-            f"\\colorbox{{nfpbadgeblue}}{{\\textcolor{{white}}{{\\small\\textbf{{ {self.escape_latex(type_label)} }}}}}}"
-            "\\hspace{4pt}"
-            "\\colorbox{nfpbadgegreen}{\\textcolor{white}{\\small\\textbf{ OPEN ACCESS }}}"
+            f"{{\\itshape\\color{{nfpnavy}} {self.escape_latex(article_type)} \\textbullet\\ Open Access}}"
             "\n\n"
         )
 
@@ -701,21 +691,30 @@ class LaTeXGenerator:
         if not (logo_path or self.journal_name or brand_path):
             return ""
 
-        # Both logos constrained to the same height (with a width cap and
-        # keepaspectratio so neither can blow out the header) so they read
-        # as a matched pair regardless of their original image proportions —
-        # a journal cover thumbnail (portrait) and a wordmark logo
-        # (landscape) previously ended up at very different visual sizes
-        # when each was constrained by a different fixed width instead.
-        logo_opts = "height=1.4cm,width=2.4cm,keepaspectratio"
-        left = f"\\includegraphics[{logo_opts}]{{{logo_path}}}" if logo_path else ""
+        # Both logos get the SAME square footprint (a fixed-width \makebox,
+        # not just a fixed height) so they read as a balanced pair
+        # regardless of their original proportions — a journal cover
+        # thumbnail is typically a tall portrait rectangle (e.g. an A4
+        # page preview) while a publisher wordmark is closer to square;
+        # constraining both by height alone still left the portrait one
+        # much narrower than the square one, reading as visually
+        # unbalanced even though both were technically "the same height".
+        # keepaspectratio still applies within that square, so neither
+        # image is distorted — just centered in an equal-size box.
+        logo_box = "1.4cm"
+        logo_opts = f"height={logo_box},width={logo_box},keepaspectratio"
+
+        def _boxed_logo(path: str) -> str:
+            return f"\\makebox[{logo_box}][c]{{\\includegraphics[{logo_opts}]{{{path}}}}}"
+
+        left = _boxed_logo(logo_path) if logo_path else ""
         center = ""
         if self.journal_name:
             center = (
                 "{\\small\\color{gray!70!black} From the journal:}\\\\[2pt]"
                 f"{{\\bfseries\\large\\color{{nfpnavy}} {self.escape_latex(self.journal_name)}}}"
             )
-        right = f"\\includegraphics[{logo_opts}]{{{brand_path}}}" if brand_path else ""
+        right = _boxed_logo(brand_path) if brand_path else ""
 
         # \centering/\raggedleft are paragraph-mode declarations: left
         # dangling with no content after them (e.g. when a logo is missing
@@ -768,8 +767,6 @@ class LaTeXGenerator:
 
 % Brand colors, matching the WeasyPrint template's palette
 \definecolor{nfpnavy}{HTML}{0F3557}
-\definecolor{nfpbadgeblue}{HTML}{2C6FBB}
-\definecolor{nfpbadgegreen}{HTML}{2E9E5B}
 
 % Colored text instead of hyperref's default boxed-border links, navy to
 % match the WeasyPrint template's link color; no boxes in the printed/PDF
