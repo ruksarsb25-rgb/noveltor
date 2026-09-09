@@ -549,6 +549,7 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None, orphan_fig_c
             caption = ""
             skip_label = skip_caption = ""
             idx_delta = para_delta = 0
+            own_prose = ""
 
             # Look back: preceding non-empty paragraph was a skip label
             is_skip = bool(_SKIP_FIG_RE.match(last_nonempty_text)) if last_nonempty_text else False
@@ -565,6 +566,18 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None, orphan_fig_c
                     skip_label = skip_label.strip(); skip_caption = skip_caption.strip()
                 elif _FIG_CAPTION_RE.match(text):
                     caption = _strip_fig_label(text)
+                else:
+                    # An image can be anchored/floating inside the very same
+                    # paragraph as ordinary body prose (e.g. a sentence
+                    # introducing a scheme, with the figure floating at the
+                    # end of that same paragraph rather than living in its
+                    # own). That text is neither a caption nor a skip label,
+                    # so without this branch it was silently dropped just
+                    # because an image happened to share its paragraph
+                    # (observed: a whole "Chemistry" section paragraph
+                    # vanishing from the export because Scheme-1's image
+                    # lived in the same paragraph as its lead-in sentence).
+                    own_prose = text
 
             if not caption and not is_skip:
                 # Look ahead for a caption or skip label (skip up to 2 blanks)
@@ -597,6 +610,13 @@ def _extract_structure(doc, state: dict, fig_captions: dict = None, orphan_fig_c
 
             idx      += idx_delta
             para_idx += para_delta
+
+            if own_prose:
+                if current_section is None:
+                    current_section = _new_section("", "Other")
+                target = (current_section["subsections"][-1]["content"]
+                          if current_section["subsections"] else current_section["content"])
+                target.append({"type": "paragraph", "text": _para_text_with_fmt(p)})
 
             if is_skip:
                 # Include image without Fig-N numbering
