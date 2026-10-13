@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from parser.docx_parser import parse_docx
 from jats.generator import generate_jats
 from jats.validator import validate_jats
+from utils.image_optimize import optimize_article_images
 
 load_dotenv()
 
@@ -319,6 +320,11 @@ def export_web_zip():
         if data.get("references"):
             data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
 
+        # Shrink oversized figures/logos once, up front, so every artifact
+        # generated below (PDF, XML package, web ZIP) stays small enough for
+        # Google Scholar's crawler (~5 MB PDF limit).
+        optimize_article_images(data)
+
         from pdf_gen.html_web_template import build_web_html
         html_str = build_web_html(data)
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("title", "article"))[:60].strip("_") or "article"
@@ -355,6 +361,11 @@ def export_xml_zip():
         # of what's already several network round trips.
         if data.get("references"):
             data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
+        # Shrink oversized figures/logos once, up front, so every artifact
+        # generated below (PDF, XML package, web ZIP) stays small enough for
+        # Google Scholar's crawler (~5 MB PDF limit).
+        optimize_article_images(data)
 
         from jats.generator import generate_jats, fig_filename, eq_filename, detect_image_ext
 
@@ -424,6 +435,11 @@ def export_html():
         if data.get("references"):
             data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
 
+        # Shrink oversized figures/logos once, up front, so every artifact
+        # generated below (PDF, XML package, web ZIP) stays small enough for
+        # Google Scholar's crawler (~5 MB PDF limit).
+        optimize_article_images(data)
+
         from pdf_gen.html_template import build_html
 
         # for_pdf=False: this file gets opened directly in a browser, which
@@ -452,6 +468,11 @@ def export_pdf():
         # of what's already several network round trips.
         if data.get("references"):
             data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
+        # Shrink oversized figures/logos once, up front, so every artifact
+        # generated below (PDF, XML package, web ZIP) stays small enough for
+        # Google Scholar's crawler (~5 MB PDF limit).
+        optimize_article_images(data)
 
         from pdf_gen.html_template import build_html
         from pdf_gen.renderer import render_pdf
@@ -967,6 +988,11 @@ def export_pdf_latex():
         # of what's already several network round trips.
         if data.get("references"):
             data["references"], _ = _enrich_references_with_dois(data["references"], delay=0.0)
+
+        # Shrink oversized figures/logos once, up front, so every artifact
+        # generated below (PDF, XML package, web ZIP) stays small enough for
+        # Google Scholar's crawler (~5 MB PDF limit).
+        optimize_article_images(data)
 
         from utils.pdf_latex import generate_pdf_from_latex
 
